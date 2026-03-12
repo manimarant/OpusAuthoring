@@ -5,7 +5,7 @@
   "functions": {
     "api/[...route].ts": {
       "maxDuration": 300,
-      "includeFiles": "server/app.js"
+      "includeFiles": "server/**"
     }
   },
   "rewrites": [
