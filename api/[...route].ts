@@ -1,10 +1,10 @@
-import { attachErrorHandler, createApp } from "../server/app";
-import { registerRoutes } from "../server/routes";
+import * as serverApp from "../server/app";
+import * as serverRoutes from "../server/routes";
 
 const appPromise = (async () => {
-  const app = createApp();
-  await registerRoutes(app);
-  attachErrorHandler(app);
+  const app = (serverApp as any).createApp();
+  await (serverRoutes as any).registerRoutes(app);
+  (serverApp as any).attachErrorHandler(app);
   return app;
 })();
 
