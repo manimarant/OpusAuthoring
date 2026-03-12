@@ -1,0 +1,68 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="generalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a8edea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fed6e3;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="shapeGradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:0.8" />
+    </linearGradient>
+    <linearGradient id="shapeGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:0.8" />
+    </linearGradient>
+    <linearGradient id="shapeGradient3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4facfe;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#00f2fe;stop-opacity:0.8" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#generalGradient)"/>
+  
+  <!-- Geometric shapes -->
+  <!-- Large circle -->
+  <circle cx="200" cy="200" r="80" fill="url(#shapeGradient1)"/>
+  
+  <!-- Triangle -->
+  <polygon points="500,150 600,150 550,250" fill="url(#shapeGradient2)"/>
+  
+  <!-- Rectangle -->
+  <rect x="300" y="280" width="120" height="80" fill="url(#shapeGradient3)" rx="10"/>
+  
+  <!-- Hexagon -->
+  <polygon points="650,250 680,230 710,250 710,290 680,310 650,290" fill="url(#shapeGradient1)"/>
+  
+  <!-- Small decorative shapes -->
+  <circle cx="150" cy="350" r="25" fill="rgba(255,255,255,0.6)"/>
+  <rect x="600" y="100" width="40" height="40" fill="rgba(255,255,255,0.5)" rx="5"/>
+  <polygon points="100,120 130,100 130,140" fill="rgba(255,255,255,0.4)"/>
+  
+  <!-- Abstract lines -->
+  <path d="M50 250 Q200 200 350 250 T650 250" stroke="rgba(255,255,255,0.7)" stroke-width="3" fill="none"/>
+  <path d="M100 300 Q300 250 500 300 T750 300" stroke="rgba(255,255,255,0.5)" stroke-width="2" fill="none"/>
+  
+  <!-- Dotted pattern -->
+  <g fill="rgba(255,255,255,0.4)">
+    <circle cx="50" cy="50" r="3"/>
+    <circle cx="70" cy="60" r="3"/>
+    <circle cx="90" cy="50" r="3"/>
+    <circle cx="110" cy="60" r="3"/>
+    <circle cx="130" cy="50" r="3"/>
+    
+    <circle cx="670" cy="350" r="3"/>
+    <circle cx="690" cy="360" r="3"/>
+    <circle cx="710" cy="350" r="3"/>
+    <circle cx="730" cy="360" r="3"/>
+    <circle cx="750" cy="350" r="3"/>
+  </g>
+  
+  <!-- Overlapping transparent shapes for depth -->
+  <ellipse cx="400" cy="180" rx="60" ry="40" fill="rgba(255,255,255,0.3)" transform="rotate(45 400 180)"/>
+  <rect x="520" y="300" width="80" height="50" fill="rgba(255,255,255,0.2)" rx="25" transform="rotate(-20 560 325)"/>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">PROFESSIONAL</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Course Content</text>
+</svg>

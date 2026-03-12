@@ -1,0 +1,231 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="lightGradient" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#FFA500;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#FF8C00;stop-opacity:0.3" />
+    </radialGradient>
+    <linearGradient id="backgroundGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="bulbGradient" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:0.9" />
+      <stop offset="70%" style="stop-color:#F0F0F0;stop-opacity:0.6" />
+      <stop offset="100%" style="stop-color:#E0E0E0;stop-opacity:0.3" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Dark background -->
+  <rect width="800" height="450" fill="url(#backgroundGradient)"/>
+  
+  <!-- Main light bulb -->
+  <g transform="translate(400, 225)">
+    <!-- Light rays emanating from bulb -->
+    <g stroke="rgba(255,215,0,0.6)" stroke-width="3" fill="none">
+      <line x1="0" y1="-80" x2="0" y2="-120"/>
+      <line x1="0" y1="80" x2="0" y2="120"/>
+      <line x1="-80" y1="0" x2="-120" y2="0"/>
+      <line x1="80" y1="0" x2="120" y2="0"/>
+      
+      <line x1="-57" y1="-57" x2="-85" y2="-85"/>
+      <line x1="57" y1="-57" x2="85" y2="-85"/>
+      <line x1="-57" y1="57" x2="-85" y2="85"/>
+      <line x1="57" y1="57" x2="85" y2="85"/>
+      
+      <!-- Additional diagonal rays -->
+      <line x1="-40" y1="-70" x2="-60" y2="-105"/>
+      <line x1="40" y1="-70" x2="60" y2="-105"/>
+      <line x1="-70" y1="-40" x2="-105" y2="-60"/>
+      <line x1="70" y1="-40" x2="105" y2="-60"/>
+      <line x1="-70" y1="40" x2="-105" y2="60"/>
+      <line x1="70" y1="40" x2="105" y2="60"/>
+      <line x1="-40" y1="70" x2="-60" y2="105"/>
+      <line x1="40" y1="70" x2="60" y2="105"/>
+    </g>
+    
+    <!-- Bright glow effect -->
+    <circle cx="0" cy="-10" r="100" fill="url(#lightGradient)" opacity="0.4"/>
+    <circle cx="0" cy="-10" r="70" fill="url(#lightGradient)" opacity="0.3"/>
+    <circle cx="0" cy="-10" r="50" fill="url(#lightGradient)" opacity="0.2"/>
+    
+    <!-- Light bulb shape -->
+    <circle cx="0" cy="-20" r="45" fill="url(#bulbGradient)"/>
+    
+    <!-- Bulb base/screw -->
+    <rect x="-20" y="25" width="40" height="25" fill="#C0C0C0" rx="5"/>
+    <!-- Screw threads -->
+    <line x1="-18" y1="30" x2="18" y2="30" stroke="#999" stroke-width="1"/>
+    <line x1="-18" y1="35" x2="18" y2="35" stroke="#999" stroke-width="1"/>
+    <line x1="-18" y1="40" x2="18" y2="40" stroke="#999" stroke-width="1"/>
+    <line x1="-18" y1="45" x2="18" y2="45" stroke="#999" stroke-width="1"/>
+    
+    <!-- Filament inside bulb -->
+    <g stroke="#FF8C00" stroke-width="2" fill="none" opacity="0.8">
+      <path d="M-15,-30 Q0,-35 15,-30"/>
+      <path d="M-15,-20 Q0,-25 15,-20"/>
+      <path d="M-15,-10 Q0,-15 15,-10"/>
+      <line x1="0" y1="-35" x2="0" y2="15"/>
+    </g>
+    
+    <!-- Highlight on bulb -->
+    <ellipse cx="-15" cy="-35" rx="8" ry="15" fill="rgba(255,255,255,0.6)"/>
+  </g>
+  
+  <!-- Smaller light sources around -->
+  
+  <!-- LED lights -->
+  <g transform="translate(150, 150)">
+    <rect x="0" y="0" width="20" height="20" fill="#4A90E2" rx="3"/>
+    <circle cx="10" cy="10" r="6" fill="#87CEEB"/>
+    <circle cx="10" cy="10" r="3" fill="#E0F6FF"/>
+    <!-- LED glow -->
+    <circle cx="10" cy="10" r="15" fill="rgba(135,206,235,0.3)"/>
+  </g>
+  
+  <g transform="translate(180, 180)">
+    <rect x="0" y="0" width="20" height="20" fill="#E74C3C" rx="3"/>
+    <circle cx="10" cy="10" r="6" fill="#FF6B6B"/>
+    <circle cx="10" cy="10" r="3" fill="#FFE0E0"/>
+    <!-- LED glow -->
+    <circle cx="10" cy="10" r="15" fill="rgba(255,107,107,0.3)"/>
+  </g>
+  
+  <g transform="translate(620, 160)">
+    <rect x="0" y="0" width="20" height="20" fill="#2ECC71" rx="3"/>
+    <circle cx="10" cy="10" r="6" fill="#90EE90"/>
+    <circle cx="10" cy="10" r="3" fill="#E0FFE0"/>
+    <!-- LED glow -->
+    <circle cx="10" cy="10" r="15" fill="rgba(144,238,144,0.3)"/>
+  </g>
+  
+  <!-- Candle -->
+  <g transform="translate(100, 300)">
+    <!-- Candle body -->
+    <rect x="0" y="20" width="15" height="60" fill="#F4E4BC" rx="7"/>
+    <!-- Wick -->
+    <rect x="6" y="15" width="3" height="10" fill="#333"/>
+    <!-- Flame -->
+    <ellipse cx="7.5" cy="10" rx="5" ry="10" fill="#FF6B35"/>
+    <ellipse cx="7.5" cy="12" rx="3" ry="6" fill="#FFA500"/>
+    <ellipse cx="7.5" cy="14" rx="2" ry="4" fill="#FFD700"/>
+    <!-- Candle glow -->
+    <circle cx="7.5" cy="10" r="20" fill="rgba(255,165,0,0.2)"/>
+  </g>
+  
+  <!-- Fluorescent tube -->
+  <g transform="translate(600, 300)">
+    <rect x="0" y="0" width="100" height="15" fill="#E0E0E0" rx="7"/>
+    <rect x="5" y="3" width="90" height="9" fill="#F0F8FF" rx="4"/>
+    <!-- End caps -->
+    <circle cx="7" cy="7.5" r="4" fill="#C0C0C0"/>
+    <circle cx="93" cy="7.5" r="4" fill="#C0C0C0"/>
+    <!-- Fluorescent glow -->
+    <rect x="-5" y="-5" width="110" height="25" fill="rgba(240,248,255,0.3)" rx="12"/>
+  </g>
+  
+  <!-- Lamp with shade -->
+  <g transform="translate(200, 320)">
+    <!-- Lamp base -->
+    <rect x="0" y="40" width="30" height="20" fill="#8B4513" rx="15"/>
+    <!-- Lamp stem -->
+    <rect x="12" y="20" width="6" height="20" fill="#654321"/>
+    <!-- Lamp shade -->
+    <path d="M-10,20 L50,20 L40,0 L0,0 Z" fill="#DEB887"/>
+    <!-- Light from under shade -->
+    <ellipse cx="20" cy="25" rx="25" ry="8" fill="rgba(255,215,0,0.4)"/>
+  </g>
+  
+  <!-- Torch/Flashlight -->
+  <g transform="translate(650, 250)">
+    <!-- Flashlight body -->
+    <rect x="0" y="0" width="80" height="20" fill="#2C3E50" rx="10"/>
+    <!-- Light beam -->
+    <polygon points="80,5 150,0 150,25 80,15" fill="rgba(255,255,255,0.6)"/>
+    <!-- Lens -->
+    <circle cx="80" cy="10" r="8" fill="#E0E0E0"/>
+    <circle cx="80" cy="10" r="5" fill="#F8F8FF"/>
+    <!-- Switch -->
+    <rect x="20" y="5" width="8" height="10" fill="#E74C3C" rx="2"/>
+  </g>
+  
+  <!-- Innovation symbols -->
+  
+  <!-- Gear/cog representing innovation -->
+  <g transform="translate(250, 100)" fill="#FFD700" opacity="0.7">
+    <circle cx="0" cy="0" r="20"/>
+    <circle cx="0" cy="0" r="12" fill="#FFA500"/>
+    <circle cx="0" cy="0" r="5" fill="#FF8C00"/>
+    <!-- Gear teeth -->
+    <rect x="-2" y="-25" width="4" height="10" rx="2"/>
+    <rect x="-2" y="15" width="4" height="10" rx="2"/>
+    <rect x="-25" y="-2" width="10" height="4" rx="2"/>
+    <rect x="15" y="-2" width="10" height="4" rx="2"/>
+    
+    <rect x="-18" y="-18" width="8" height="4" rx="2" transform="rotate(45)"/>
+    <rect x="10" y="-18" width="8" height="4" rx="2" transform="rotate(-45)"/>
+    <rect x="-18" y="14" width="8" height="4" rx="2" transform="rotate(-45)"/>
+    <rect x="10" y="14" width="8" height="4" rx="2" transform="rotate(45)"/>
+  </g>
+  
+  <!-- Circuit board pattern -->
+  <g stroke="rgba(0,255,127,0.4)" stroke-width="2" fill="none">
+    <path d="M50,50 L100,50 L100,80 L150,80"/>
+    <path d="M100,50 L100,20 L180,20"/>
+    <path d="M150,80 L150,120 L200,120"/>
+    <circle cx="100" cy="50" r="3" fill="#00FF7F"/>
+    <circle cx="150" cy="80" r="3" fill="#00FF7F"/>
+    <circle cx="100" cy="20" r="3" fill="#00FF7F"/>
+  </g>
+  
+  <!-- Binary code stream -->
+  <g fill="rgba(0,255,127,0.3)" font-family="monospace" font-size="14">
+    <text x="550" y="80">1010110</text>
+    <text x="570" y="100">110100</text>
+    <text x="560" y="120">1001011</text>
+    <text x="580" y="140">101110</text>
+  </g>
+  
+  <!-- Light particles/sparkles -->
+  <g fill="#FFD700">
+    <circle cx="320" cy="80" r="2"/>
+    <circle cx="480" cy="120" r="3"/>
+    <circle cx="350" cy="50" r="2"/>
+    <circle cx="450" cy="70" r="2"/>
+    <circle cx="520" cy="90" r="3"/>
+    
+    <!-- Star sparkles -->
+    <g transform="translate(300, 350)">
+      <polygon points="0,-8 2,-2 8,0 2,2 0,8 -2,2 -8,0 -2,-2" fill="#FFD700"/>
+    </g>
+    <g transform="translate(500, 380)">
+      <polygon points="0,-6 1.5,-1.5 6,0 1.5,1.5 0,6 -1.5,1.5 -6,0 -1.5,-1.5" fill="#FFD700"/>
+    </g>
+  </g>
+  
+  <!-- Innovation network connections -->
+  <g stroke="rgba(255,215,0,0.3)" stroke-width="1" fill="none">
+    <line x1="150" y1="150" x2="400" y2="225"/>
+    <line x1="620" y1="160" x2="400" y2="225"/>
+    <line x1="100" y1="300" x2="400" y2="225"/>
+    <line x1="650" y1="250" x2="400" y2="225"/>
+    <line x1="200" y1="320" x2="400" y2="225"/>
+    
+    <!-- Connection nodes -->
+    <circle cx="275" cy="188" r="3" fill="#FFD700"/>
+    <circle cx="510" cy="193" r="3" fill="#FFD700"/>
+    <circle cx="250" cy="273" r="3" fill="#FFD700"/>
+    <circle cx="525" cy="238" r="3" fill="#FFD700"/>
+  </g>
+  
+  <!-- Progress arrows -->
+  <g fill="#4CAF50" opacity="0.7">
+    <path d="M50,400 L80,400 L75,395 L90,410 L75,425 L80,420 L50,420 Z"/>
+    <path d="M150,400 L180,400 L175,395 L190,410 L175,425 L180,420 L150,420 Z"/>
+    <path d="M250,400 L280,400 L275,395 L290,410 L275,425 L280,420 L250,420 Z"/>
+  </g>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#FFD700">INNOVATION</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,215,0,0.8)">Bright Ideas &amp; Progress</text>
+</svg>

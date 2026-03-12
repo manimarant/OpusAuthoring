@@ -1,0 +1,81 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="educationGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fa709a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fee140;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#educationGradient)"/>
+  
+  <!-- Stack of books -->
+  <!-- Book 1 (bottom) -->
+  <rect x="250" y="320" width="300" height="40" fill="#8B4513" rx="3"/>
+  <rect x="255" y="315" width="290" height="40" fill="#A0522D" rx="3"/>
+  <text x="400" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">FOUNDATIONS</text>
+  
+  <!-- Book 2 -->
+  <rect x="260" y="280" width="280" height="35" fill="#2E8B57" rx="3"/>
+  <rect x="265" y="275" width="270" height="35" fill="#3CB371" rx="3"/>
+  <text x="400" y="297" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white">PRINCIPLES</text>
+  
+  <!-- Book 3 -->
+  <rect x="270" y="245" width="260" height="30" fill="#4169E1" rx="3"/>
+  <rect x="275" y="240" width="250" height="30" fill="#6495ED" rx="3"/>
+  <text x="400" y="258" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">METHODS</text>
+  
+  <!-- Book 4 (top) -->
+  <rect x="280" y="215" width="240" height="25" fill="#DC143C" rx="3"/>
+  <rect x="285" y="210" width="230" height="25" fill="#FF6347" rx="3"/>
+  <text x="400" y="225" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="white">MASTERY</text>
+  
+  <!-- Open book -->
+  <g transform="translate(150, 150)">
+    <!-- Left page -->
+    <path d="M0 80 Q0 60 20 60 L80 60 Q100 60 100 80 L100 120 Q100 140 80 140 L20 140 Q0 140 0 120 Z" fill="rgba(255,255,255,0.95)"/>
+    <!-- Right page -->
+    <path d="M100 80 Q100 60 120 60 L180 60 Q200 60 200 80 L200 120 Q200 140 180 140 L120 140 Q100 140 100 120 Z" fill="rgba(255,255,255,0.95)"/>
+    
+    <!-- Text lines on left page -->
+    <line x1="15" y1="75" x2="85" y2="75" stroke="#333" stroke-width="1"/>
+    <line x1="15" y1="85" x2="80" y2="85" stroke="#333" stroke-width="1"/>
+    <line x1="15" y1="95" x2="85" y2="95" stroke="#333" stroke-width="1"/>
+    <line x1="15" y1="105" x2="75" y2="105" stroke="#333" stroke-width="1"/>
+    <line x1="15" y1="115" x2="85" y2="115" stroke="#333" stroke-width="1"/>
+    <line x1="15" y1="125" x2="70" y2="125" stroke="#333" stroke-width="1"/>
+    
+    <!-- Text lines on right page -->
+    <line x1="115" y1="75" x2="185" y2="75" stroke="#333" stroke-width="1"/>
+    <line x1="115" y1="85" x2="180" y2="85" stroke="#333" stroke-width="1"/>
+    <line x1="115" y1="95" x2="185" y2="95" stroke="#333" stroke-width="1"/>
+    <line x1="115" y1="105" x2="175" y2="105" stroke="#333" stroke-width="1"/>
+    <line x1="115" y1="115" x2="185" y2="115" stroke="#333" stroke-width="1"/>
+    <line x1="115" y1="125" x2="170" y2="125" stroke="#333" stroke-width="1"/>
+  </g>
+  
+  <!-- Graduation cap -->
+  <g transform="translate(550, 180)">
+    <!-- Cap base -->
+    <ellipse cx="0" cy="0" rx="60" ry="15" fill="#2C3E50"/>
+    <!-- Cap top -->
+    <rect x="-50" y="-10" width="100" height="8" fill="#34495E" rx="4"/>
+    <!-- Tassel -->
+    <line x1="40" y1="-6" x2="55" y2="-20" stroke="#F39C12" stroke-width="3"/>
+    <circle cx="55" cy="-20" r="4" fill="#F39C12"/>
+  </g>
+  
+  <!-- Knowledge symbols -->
+  <text x="100" y="300" font-family="Arial, sans-serif" font-size="24" fill="rgba(255,255,255,0.7)">∑</text>
+  <text x="680" y="250" font-family="Arial, sans-serif" font-size="28" fill="rgba(255,255,255,0.7)">∫</text>
+  <text x="120" y="180" font-family="Arial, sans-serif" font-size="20" fill="rgba(255,255,255,0.7)">π</text>
+  <text x="650" y="320" font-family="Arial, sans-serif" font-size="22" fill="rgba(255,255,255,0.7)">√</text>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">EDUCATION</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Learning &amp; Knowledge</text>
+  
+  <!-- Decorative elements -->
+  <circle cx="70" cy="120" r="15" fill="rgba(255,255,255,0.1)"/>
+  <circle cx="730" cy="380" r="20" fill="rgba(255,255,255,0.1)"/>
+</svg>

@@ -1,0 +1,28 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" rx="40" fill="#FBF8FF"/>
+  <circle cx="1042" cy="154" r="74" fill="#F3E8FF"/>
+  <rect x="118" y="122" width="964" height="656" rx="34" fill="white" stroke="#E7D9F7" stroke-width="4"/>
+  <rect x="168" y="172" width="394" height="48" rx="14" fill="#581C87"/>
+  <rect x="168" y="242" width="232" height="20" rx="10" fill="#C084FC"/>
+  <rect x="168" y="322" width="254" height="112" rx="26" fill="#EDE9FE"/>
+  <rect x="206" y="358" width="150" height="16" rx="8" fill="#7E22CE"/>
+  <rect x="206" y="388" width="108" height="12" rx="6" fill="#A855F7"/>
+  <rect x="474" y="322" width="254" height="112" rx="26" fill="#F3E8FF"/>
+  <rect x="512" y="358" width="148" height="16" rx="8" fill="#7E22CE"/>
+  <rect x="512" y="388" width="120" height="12" rx="6" fill="#A855F7"/>
+  <rect x="780" y="322" width="254" height="112" rx="26" fill="#FAE8FF"/>
+  <rect x="818" y="358" width="130" height="16" rx="8" fill="#7E22CE"/>
+  <rect x="818" y="388" width="102" height="12" rx="6" fill="#A855F7"/>
+  <path d="M294 434V510" stroke="#C084FC" stroke-width="10" stroke-linecap="round"/>
+  <path d="M600 434V510" stroke="#C084FC" stroke-width="10" stroke-linecap="round"/>
+  <path d="M906 434V510" stroke="#C084FC" stroke-width="10" stroke-linecap="round"/>
+  <path d="M294 510H906" stroke="#C084FC" stroke-width="10" stroke-linecap="round"/>
+  <rect x="184" y="540" width="176" height="128" rx="24" fill="#FFF7ED" stroke="#FED7AA" stroke-width="3"/>
+  <rect x="390" y="540" width="176" height="128" rx="24" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="3"/>
+  <rect x="596" y="540" width="176" height="128" rx="24" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="3"/>
+  <rect x="802" y="540" width="176" height="128" rx="24" fill="#FEF2F2" stroke="#FECACA" stroke-width="3"/>
+  <rect x="214" y="580" width="96" height="14" rx="7" fill="#EA580C"/>
+  <rect x="420" y="580" width="106" height="14" rx="7" fill="#2563EB"/>
+  <rect x="626" y="580" width="98" height="14" rx="7" fill="#16A34A"/>
+  <rect x="832" y="580" width="104" height="14" rx="7" fill="#DC2626"/>
+</svg>

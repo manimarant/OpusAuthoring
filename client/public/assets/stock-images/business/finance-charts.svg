@@ -1,0 +1,69 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="businessGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#businessGradient2)"/>
+  
+  <!-- Chart background -->
+  <rect x="150" y="100" width="500" height="280" fill="rgba(255,255,255,0.95)" rx="10"/>
+  
+  <!-- Financial trend lines -->
+  <g stroke-width="4" fill="none">
+    <polyline points="180,300 220,250 260,280 300,200 340,230 380,150 420,180 460,120 500,140 540,100 580,130 620,80" stroke="#4CAF50"/>
+    <polyline points="180,320 220,290 260,310 300,260 340,280 380,220 420,240 460,200 500,210 540,180 580,200 620,160" stroke="#2196F3"/>
+  </g>
+  
+  <!-- Data points -->
+  <g fill="#4CAF50">
+    <circle cx="180" cy="300" r="4"/>
+    <circle cx="220" cy="250" r="4"/>
+    <circle cx="260" cy="280" r="4"/>
+    <circle cx="300" cy="200" r="4"/>
+    <circle cx="340" cy="230" r="4"/>
+    <circle cx="380" cy="150" r="4"/>
+    <circle cx="420" cy="180" r="4"/>
+    <circle cx="460" cy="120" r="4"/>
+    <circle cx="500" cy="140" r="4"/>
+    <circle cx="540" cy="100" r="4"/>
+    <circle cx="580" cy="130" r="4"/>
+    <circle cx="620" cy="80" r="4"/>
+  </g>
+  
+  <!-- Grid lines -->
+  <g stroke="rgba(0,0,0,0.1)" stroke-width="1">
+    <line x1="180" y1="100" x2="180" y2="380"/>
+    <line x1="280" y1="100" x2="280" y2="380"/>
+    <line x1="380" y1="100" x2="380" y2="380"/>
+    <line x1="480" y1="100" x2="480" y2="380"/>
+    <line x1="580" y1="100" x2="580" y2="380"/>
+    
+    <line x1="150" y1="150" x2="650" y2="150"/>
+    <line x1="150" y1="200" x2="650" y2="200"/>
+    <line x1="150" y1="250" x2="650" y2="250"/>
+    <line x1="150" y1="300" x2="650" y2="300"/>
+    <line x1="150" y1="350" x2="650" y2="350"/>
+  </g>
+  
+  <!-- Value indicators -->
+  <rect x="680" y="120" width="80" height="50" fill="rgba(76, 175, 80, 0.1)" rx="5"/>
+  <text x="720" y="140" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#4CAF50">↗ +12%</text>
+  <text x="720" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#666">Revenue</text>
+  
+  <rect x="680" y="180" width="80" height="50" fill="rgba(33, 150, 243, 0.1)" rx="5"/>
+  <text x="720" y="200" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2196F3">↗ +8%</text>
+  <text x="720" y="215" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#666">Profit</text>
+  
+  <!-- Currency symbols -->
+  <text x="100" y="150" font-family="Arial, sans-serif" font-size="32" fill="rgba(255,255,255,0.4)">$</text>
+  <text x="90" y="250" font-family="Arial, sans-serif" font-size="28" fill="rgba(255,255,255,0.3)">€</text>
+  <text x="110" y="320" font-family="Arial, sans-serif" font-size="24" fill="rgba(255,255,255,0.3)">£</text>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">FINANCE</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Charts &amp; Analysis</text>
+</svg>

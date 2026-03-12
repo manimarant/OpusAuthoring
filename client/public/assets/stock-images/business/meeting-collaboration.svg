@@ -1,0 +1,52 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="businessGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#businessGradient)"/>
+  
+  <!-- Conference table -->
+  <ellipse cx="400" cy="280" rx="250" ry="80" fill="#8B4513"/>
+  <ellipse cx="400" cy="270" rx="250" ry="80" fill="#A0522D"/>
+  
+  <!-- People (simplified figures) -->
+  <!-- Person 1 -->
+  <circle cx="300" cy="200" r="25" fill="#FDBCB4"/>
+  <rect x="285" y="220" width="30" height="60" fill="#2E3A87"/>
+  
+  <!-- Person 2 -->
+  <circle cx="400" cy="180" r="25" fill="#FDBCB4"/>
+  <rect x="385" y="200" width="30" height="60" fill="#8B0000"/>
+  
+  <!-- Person 3 -->
+  <circle cx="500" cy="200" r="25" fill="#FDBCB4"/>
+  <rect x="485" y="220" width="30" height="60" fill="#228B22"/>
+  
+  <!-- Charts/presentation -->
+  <rect x="150" y="100" width="120" height="80" fill="rgba(255,255,255,0.9)" rx="5"/>
+  <rect x="160" y="130" width="20" height="40" fill="#4CAF50"/>
+  <rect x="185" y="120" width="20" height="50" fill="#2196F3"/>
+  <rect x="210" y="110" width="20" height="60" fill="#FF9800"/>
+  <rect x="235" y="140" width="20" height="30" fill="#E91E63"/>
+  
+  <!-- Documents -->
+  <rect x="530" y="120" width="100" height="70" fill="rgba(255,255,255,0.9)" rx="3"/>
+  <line x1="550" y1="135" x2="610" y2="135" stroke="#333" stroke-width="2"/>
+  <line x1="550" y1="145" x2="590" y2="145" stroke="#333" stroke-width="2"/>
+  <line x1="550" y1="155" x2="600" y2="155" stroke="#333" stroke-width="2"/>
+  <line x1="550" y1="165" x2="580" y2="165" stroke="#333" stroke-width="2"/>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">BUSINESS</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Strategy &amp; Management</text>
+  
+  <!-- Decorative elements -->
+  <circle cx="80" cy="120" r="25" fill="rgba(255,255,255,0.1)"/>
+  <circle cx="720" cy="330" r="35" fill="rgba(255,255,255,0.1)"/>
+  <polygon points="50,350 80,330 80,370" fill="rgba(255,255,255,0.1)"/>
+  <polygon points="730,100 760,80 760,120" fill="rgba(255,255,255,0.1)"/>
+</svg>

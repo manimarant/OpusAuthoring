@@ -1,0 +1,160 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="classroomGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#classroomGradient)"/>
+  
+  <!-- Floor -->
+  <rect x="0" y="350" width="800" height="100" fill="#E8E8E8"/>
+  
+  <!-- Blackboard -->
+  <rect x="50" y="100" width="300" height="180" fill="#2C3E50" rx="5"/>
+  <rect x="55" y="105" width="290" height="170" fill="#34495E" rx="3"/>
+  
+  <!-- Math equations on blackboard -->
+  <text x="200" y="140" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" fill="white">E = mc²</text>
+  <text x="200" y="170" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="white">a² + b² = c²</text>
+  <text x="200" y="200" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="white">∫ f(x)dx</text>
+  <text x="200" y="230" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="white">f(x) = ax + b</text>
+  
+  <!-- Blackboard frame -->
+  <rect x="45" y="95" width="310" height="190" fill="none" stroke="#8B4513" stroke-width="5"/>
+  
+  <!-- Teacher figure -->
+  <g transform="translate(380, 180)">
+    <!-- Body -->
+    <rect x="0" y="40" width="30" height="60" fill="#4A90E2" rx="5"/>
+    <!-- Head -->
+    <circle cx="15" cy="20" r="15" fill="#FDBCB4"/>
+    <!-- Hair -->
+    <path d="M5,10 Q15,5 25,10 Q25,15 15,20 Q5,15 5,10" fill="#8B4513"/>
+    <!-- Arms -->
+    <rect x="-8" y="45" width="15" height="4" fill="#FDBCB4" rx="2"/>
+    <rect x="23" y="45" width="15" height="4" fill="#FDBCB4" rx="2"/>
+    <!-- Legs -->
+    <rect x="5" y="100" width="8" height="40" fill="#2C3E50"/>
+    <rect x="17" y="100" width="8" height="40" fill="#2C3E50"/>
+    <!-- Pointing hand -->
+    <circle cx="40" cy="47" r="3" fill="#FDBCB4"/>
+    <line x1="38" y1="47" x2="280" y2="170" stroke="#654321" stroke-width="3"/>
+  </g>
+  
+  <!-- Pointer -->
+  <line x1="420" y1="227" x2="320" y2="200" stroke="#8B4513" stroke-width="2"/>
+  
+  <!-- Student desks -->
+  <g fill="#8B4513">
+    <!-- Row 1 -->
+    <rect x="450" y="250" width="60" height="40" rx="3"/>
+    <rect x="550" y="250" width="60" height="40" rx="3"/>
+    <rect x="650" y="250" width="60" height="40" rx="3"/>
+    
+    <!-- Row 2 -->
+    <rect x="450" y="320" width="60" height="40" rx="3"/>
+    <rect x="550" y="320" width="60" height="40" rx="3"/>
+    <rect x="650" y="320" width="60" height="40" rx="3"/>
+  </g>
+  
+  <!-- Desk legs -->
+  <g fill="#654321">
+    <!-- Row 1 legs -->
+    <rect x="455" y="290" width="4" height="30"/>
+    <rect x="501" y="290" width="4" height="30"/>
+    <rect x="555" y="290" width="4" height="30"/>
+    <rect x="601" y="290" width="4" height="30"/>
+    <rect x="655" y="290" width="4" height="30"/>
+    <rect x="701" y="290" width="4" height="30"/>
+    
+    <!-- Row 2 legs -->
+    <rect x="455" y="360" width="4" height="30"/>
+    <rect x="501" y="360" width="4" height="30"/>
+    <rect x="555" y="360" width="4" height="30"/>
+    <rect x="601" y="360" width="4" height="30"/>
+    <rect x="655" y="360" width="4" height="30"/>
+    <rect x="701" y="360" width="4" height="30"/>
+  </g>
+  
+  <!-- Students -->
+  <!-- Student 1 -->
+  <g transform="translate(470, 200)">
+    <circle cx="10" cy="10" r="8" fill="#FDBCB4"/>
+    <path d="M3,5 Q10,2 17,5 Q17,10 10,12 Q3,10 3,5" fill="#FFD700"/>
+    <rect x="5" y="18" width="10" height="25" fill="#E74C3C" rx="2"/>
+  </g>
+  
+  <!-- Student 2 -->
+  <g transform="translate(570, 200)">
+    <circle cx="10" cy="10" r="8" fill="#FDBCB4"/>
+    <path d="M3,5 Q10,2 17,5 Q17,10 10,12 Q3,10 3,5" fill="#2C3E50"/>
+    <rect x="5" y="18" width="10" height="25" fill="#2ECC71" rx="2"/>
+  </g>
+  
+  <!-- Student 3 -->
+  <g transform="translate(670, 200)">
+    <circle cx="10" cy="10" r="8" fill="#FDBCB4"/>
+    <path d="M3,5 Q10,2 17,5 Q17,10 10,12 Q3,10 3,5" fill="#8B4513"/>
+    <rect x="5" y="18" width="10" height="25" fill="#9B59B6" rx="2"/>
+  </g>
+  
+  <!-- Student 4 -->
+  <g transform="translate(470, 270)">
+    <circle cx="10" cy="10" r="8" fill="#FDBCB4"/>
+    <path d="M3,5 Q10,2 17,5 Q17,10 10,12 Q3,10 3,5" fill="#E67E22"/>
+    <rect x="5" y="18" width="10" height="25" fill="#3498DB" rx="2"/>
+  </g>
+  
+  <!-- Student 5 -->
+  <g transform="translate(570, 270)">
+    <circle cx="10" cy="10" r="8" fill="#FDBCB4"/>
+    <path d="M3,5 Q10,2 17,5 Q17,10 10,12 Q3,10 3,5" fill="#C0392B"/>
+    <rect x="5" y="18" width="10" height="25" fill="#F39C12" rx="2"/>
+  </g>
+  
+  <!-- Student 6 -->
+  <g transform="translate(670, 270)">
+    <circle cx="10" cy="10" r="8" fill="#FDBCB4"/>
+    <path d="M3,5 Q10,2 17,5 Q17,10 10,12 Q3,10 3,5" fill="#16A085"/>
+    <rect x="5" y="18" width="10" height="25" fill="#E91E63" rx="2"/>
+  </g>
+  
+  <!-- Books on desks -->
+  <rect x="465" y="245" width="12" height="8" fill="#E74C3C"/>
+  <rect x="480" y="247" width="10" height="6" fill="#2ECC71"/>
+  
+  <rect x="565" y="245" width="12" height="8" fill="#9B59B6"/>
+  <rect x="580" y="247" width="10" height="6" fill="#3498DB"/>
+  
+  <rect x="665" y="245" width="12" height="8" fill="#F39C12"/>
+  <rect x="680" y="247" width="10" height="6" fill="#E91E63"/>
+  
+  <!-- Clock on wall -->
+  <circle cx="600" cy="120" r="30" fill="white" stroke="#333" stroke-width="3"/>
+  <circle cx="600" cy="120" r="25" fill="white"/>
+  <line x1="600" y1="120" x2="600" y2="105" stroke="#333" stroke-width="2"/>
+  <line x1="600" y1="120" x2="615" y2="120" stroke="#333" stroke-width="2"/>
+  <circle cx="600" cy="120" r="3" fill="#333"/>
+  
+  <!-- Window -->
+  <rect x="680" y="80" width="80" height="120" fill="#87CEEB" stroke="#8B4513" stroke-width="4"/>
+  <line x1="720" y1="80" x2="720" y2="200" stroke="#8B4513" stroke-width="2"/>
+  <line x1="680" y1="140" x2="760" y2="140" stroke="#8B4513" stroke-width="2"/>
+  
+  <!-- Clouds in window -->
+  <circle cx="700" cy="110" r="8" fill="white"/>
+  <circle cx="708" cy="110" r="10" fill="white"/>
+  <circle cx="716" cy="110" r="8" fill="white"/>
+  
+  <!-- Apple on teacher's desk -->
+  <rect x="100" y="320" width="80" height="30" fill="#8B4513"/>
+  <circle cx="140" cy="315" r="8" fill="#E74C3C"/>
+  <rect x="140" y="307" width="2" height="8" fill="#228B22"/>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">CLASSROOM</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Teaching &amp; Learning</text>
+</svg>

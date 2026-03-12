@@ -1,0 +1,43 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="techGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#techGradient)"/>
+  
+  <!-- Laptop screen -->
+  <rect x="200" y="120" width="400" height="250" rx="10" fill="#2a2a2a"/>
+  <rect x="210" y="130" width="380" height="230" fill="#1a1a1a"/>
+  
+  <!-- Code lines -->
+  <rect x="230" y="150" width="60" height="8" fill="#4CAF50"/>
+  <rect x="300" y="150" width="80" height="8" fill="#2196F3"/>
+  <rect x="390" y="150" width="40" height="8" fill="#FF9800"/>
+  
+  <rect x="230" y="170" width="100" height="8" fill="#E91E63"/>
+  <rect x="340" y="170" width="120" height="8" fill="#9C27B0"/>
+  
+  <rect x="230" y="190" width="80" height="8" fill="#00BCD4"/>
+  <rect x="320" y="190" width="60" height="8" fill="#FFC107"/>
+  <rect x="390" y="190" width="100" height="8" fill="#795548"/>
+  
+  <rect x="230" y="210" width="140" height="8" fill="#607D8B"/>
+  <rect x="380" y="210" width="80" height="8" fill="#FF5722"/>
+  
+  <!-- Laptop base -->
+  <rect x="180" y="370" width="440" height="20" rx="5" fill="#333"/>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">TECHNOLOGY</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Programming &amp; Development</text>
+  
+  <!-- Decorative elements -->
+  <circle cx="100" cy="100" r="30" fill="rgba(255,255,255,0.1)"/>
+  <circle cx="700" cy="350" r="40" fill="rgba(255,255,255,0.1)"/>
+  <polygon points="50,300 80,280 80,320" fill="rgba(255,255,255,0.1)"/>
+  <polygon points="720,80 750,60 750,100" fill="rgba(255,255,255,0.1)"/>
+</svg>

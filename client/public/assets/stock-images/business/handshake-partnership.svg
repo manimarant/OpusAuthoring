@@ -1,0 +1,72 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="businessGradient3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#businessGradient3)"/>
+  
+  <!-- Handshake illustration -->
+  <g transform="translate(300, 200)">
+    <!-- Left hand/arm -->
+    <rect x="0" y="0" width="80" height="30" fill="#FDBCB4" rx="15"/>
+    <rect x="0" y="15" width="40" height="15" fill="#2E3A87"/>
+    
+    <!-- Right hand/arm -->
+    <rect x="120" y="0" width="80" height="30" fill="#FDBCB4" rx="15"/>
+    <rect x="160" y="15" width="40" height="15" fill="#8B0000"/>
+    
+    <!-- Handshake connection -->
+    <ellipse cx="100" cy="15" rx="25" ry="18" fill="#E8D4C4"/>
+    
+    <!-- Fingers -->
+    <rect x="75" y="5" width="8" height="20" fill="#FDBCB4" rx="4"/>
+    <rect x="85" y="3" width="8" height="24" fill="#FDBCB4" rx="4"/>
+    <rect x="95" y="5" width="8" height="20" fill="#FDBCB4" rx="4"/>
+    <rect x="105" y="3" width="8" height="24" fill="#FDBCB4" rx="4"/>
+    <rect x="115" y="5" width="8" height="20" fill="#FDBCB4" rx="4"/>
+  </g>
+  
+  <!-- Partnership icons -->
+  <g transform="translate(150, 300)">
+    <!-- Document -->
+    <rect x="0" y="0" width="60" height="80" fill="rgba(255,255,255,0.9)" rx="5"/>
+    <line x1="10" y1="15" x2="50" y2="15" stroke="#333" stroke-width="2"/>
+    <line x1="10" y1="25" x2="45" y2="25" stroke="#333" stroke-width="2"/>
+    <line x1="10" y1="35" x2="50" y2="35" stroke="#333" stroke-width="2"/>
+    <line x1="10" y1="45" x2="40" y2="45" stroke="#333" stroke-width="2"/>
+    <!-- Signature lines -->
+    <line x1="10" y1="60" x2="25" y2="55" stroke="#4CAF50" stroke-width="2"/>
+    <line x1="35" y1="60" x2="50" y2="55" stroke="#2196F3" stroke-width="2"/>
+  </g>
+  
+  <g transform="translate(550, 300)">
+    <!-- Briefcase -->
+    <rect x="0" y="10" width="80" height="50" fill="#8B4513" rx="5"/>
+    <rect x="10" y="0" width="60" height="15" fill="#A0522D" rx="3"/>
+    <rect x="35" y="0" width="10" height="5" fill="#654321"/>
+    <!-- Lock -->
+    <circle cx="40" cy="35" r="6" fill="#FFD700"/>
+    <rect x="37" y="32" width="6" height="6" fill="#FFD700"/>
+  </g>
+  
+  <!-- Success indicators -->
+  <g transform="translate(400, 320)">
+    <!-- Checkmark -->
+    <circle cx="0" cy="0" r="20" fill="#4CAF50"/>
+    <path d="M-8,0 L-2,6 L8,-6" stroke="white" stroke-width="3" fill="none"/>
+  </g>
+  
+  <!-- Partnership symbols -->
+  <text x="200" y="150" font-family="Arial, sans-serif" font-size="32" fill="rgba(255,255,255,0.6)">⚡</text>
+  <text x="580" y="150" font-family="Arial, sans-serif" font-size="32" fill="rgba(255,255,255,0.6)">🤝</text>
+  <text x="100" y="250" font-family="Arial, sans-serif" font-size="24" fill="rgba(255,255,255,0.5)">💼</text>
+  <text x="680" y="250" font-family="Arial, sans-serif" font-size="24" fill="rgba(255,255,255,0.5)">📈</text>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">PARTNERSHIP</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Collaboration &amp; Success</text>
+</svg>

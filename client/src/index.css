@@ -1,0 +1,397 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0 0% 98%);
+  --foreground: hsl(222 15% 20%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222 15% 20%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(222 15% 20%);
+  --primary: hsl(221 83% 53%);
+  --primary-foreground: hsl(0 0% 98%);
+  --secondary: hsl(210 40% 96%);
+  --secondary-foreground: hsl(222 15% 20%);
+  --muted: hsl(210 40% 96%);
+  --muted-foreground: hsl(222 15% 46%);
+  --accent: hsl(210 40% 96%);
+  --accent-foreground: hsl(222 15% 20%);
+  --destructive: hsl(356.3033 90.5579% 54.3137%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(214 32% 91%);
+  --input: hsl(214 32% 91%);
+  --ring: hsl(221 83% 53%);
+  --chart-1: hsl(221 83% 53%);
+  --chart-2: hsl(159.7826 100% 36.0784%);
+  --chart-3: hsl(42.0290 92.8251% 56.2745%);
+  --chart-4: hsl(147.1429 78.5047% 41.9608%);
+  --chart-5: hsl(341.4894 75.2000% 50.9804%);
+  --sidebar: hsl(0 0% 100%);
+  --sidebar-foreground: hsl(222 15% 20%);
+  --sidebar-primary: hsl(221 83% 53%);
+  --sidebar-primary-foreground: hsl(0 0% 98%);
+  --sidebar-accent: hsl(210 40% 96%);
+  --sidebar-accent-foreground: hsl(222 15% 20%);
+  --sidebar-border: hsl(214 32% 91%);
+  --sidebar-ring: hsl(221 83% 53%);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: 8px;
+  --shadow-2xs: 0px 2px 0px 0px hsl(221 83% 53% / 0.00);
+  --shadow-xs: 0px 2px 0px 0px hsl(221 83% 53% / 0.00);
+  --shadow-sm: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 1px 2px -1px hsl(221 83% 53% / 0.00);
+  --shadow: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 1px 2px -1px hsl(221 83% 53% / 0.00);
+  --shadow-md: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 2px 4px -1px hsl(221 83% 53% / 0.00);
+  --shadow-lg: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 4px 6px -1px hsl(221 83% 53% / 0.00);
+  --shadow-xl: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 8px 10px -1px hsl(221 83% 53% / 0.00);
+  --shadow-2xl: 0px 2px 0px 0px hsl(221 83% 53% / 0.00);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --background: hsl(0 0% 0%);
+  --foreground: hsl(200 6.6667% 91.1765%);
+  --card: hsl(228 9.8039% 10%);
+  --card-foreground: hsl(0 0% 85.0980%);
+  --popover: hsl(0 0% 0%);
+  --popover-foreground: hsl(200 6.6667% 91.1765%);
+  --primary: hsl(221 83% 53%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(195.0000 15.3846% 94.9020%);
+  --secondary-foreground: hsl(222 15% 20%);
+  --muted: hsl(0 0% 9.4118%);
+  --muted-foreground: hsl(210 3.3898% 46.2745%);
+  --accent: hsl(205.7143 70% 7.8431%);
+  --accent-foreground: hsl(221 83% 53%);
+  --destructive: hsl(356.3033 90.5579% 54.3137%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(210 5.2632% 14.9020%);
+  --input: hsl(207.6923 27.6596% 18.4314%);
+  --ring: hsl(221 83% 53%);
+  --chart-1: hsl(221 83% 53%);
+  --chart-2: hsl(159.7826 100% 36.0784%);
+  --chart-3: hsl(42.0290 92.8251% 56.2745%);
+  --chart-4: hsl(147.1429 78.5047% 41.9608%);
+  --chart-5: hsl(341.4894 75.2000% 50.9804%);
+  --sidebar: hsl(228 9.8039% 10%);
+  --sidebar-foreground: hsl(0 0% 85.0980%);
+  --sidebar-primary: hsl(221 83% 53%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(205.7143 70% 7.8431%);
+  --sidebar-accent-foreground: hsl(221 83% 53%);
+  --sidebar-border: hsl(205.7143 15.7895% 26.0784%);
+  --sidebar-ring: hsl(221 83% 53%);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: 8px;
+  --shadow-2xs: 0px 2px 0px 0px hsl(221 83% 53% / 0.00);
+  --shadow-xs: 0px 2px 0px 0px hsl(221 83% 53% / 0.00);
+  --shadow-sm: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 1px 2px -1px hsl(221 83% 53% / 0.00);
+  --shadow: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 1px 2px -1px hsl(221 83% 53% / 0.00);
+  --shadow-md: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 2px 4px -1px hsl(221 83% 53% / 0.00);
+  --shadow-lg: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 4px 6px -1px hsl(221 83% 53% / 0.00);
+  --shadow-xl: 0px 2px 0px 0px hsl(221 83% 53% / 0.00), 0px 8px 10px -1px hsl(221 83% 53% / 0.00);
+  --shadow-2xl: 0px 2px 0px 0px hsl(221 83% 53% / 0.00);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: "ss01", "cv02", "cv03";
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    letter-spacing: 0.025em;
+  }
+}
+
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.modal-backdrop {
+  backdrop-filter: blur(4px);
+}
+
+.content-block {
+  transition: background-color 0.2s ease;
+}
+
+.content-block:hover {
+  transform: none;
+}
+
+/* Course Navigation Enhancements */
+.course-nav-module {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.course-nav-chapter {
+  font-weight: 400;
+  letter-spacing: -0.005em;
+}
+
+/* Smooth collapse/expand animation */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+.rise-shell {
+  --rise-heading-font: "DM Sans", "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  --rise-body-font: "Open Sans", "Lato", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  --rise-font: var(--rise-body-font);
+  --rise-text: #2f3437;
+  --rise-muted: #61676d;
+  --rise-border: #d9dcdf;
+  --rise-surface: #ffffff;
+  --rise-soft: #f6f7f8;
+  font-family: var(--rise-body-font);
+  color: var(--rise-text);
+  letter-spacing: normal;
+}
+
+.rise-shell,
+.rise-shell button,
+.rise-shell input,
+.rise-shell textarea,
+.rise-shell select {
+  font-family: var(--rise-font);
+  letter-spacing: normal;
+}
+
+.rise-shell h1,
+.rise-shell h2,
+.rise-shell h3,
+.rise-shell h4,
+.rise-shell h5,
+.rise-shell h6 {
+  color: var(--rise-text);
+  font-family: var(--rise-heading-font);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.24;
+}
+
+.rise-shell p,
+.rise-shell li,
+.rise-shell label,
+.rise-shell span {
+  color: inherit;
+}
+
+.rise-lesson-title {
+  font-family: var(--rise-heading-font);
+  font-size: clamp(2.2rem, 3.5vw, 2.75rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.012em;
+  color: var(--rise-text);
+}
+
+.rise-lesson-description {
+  font-family: var(--rise-body-font);
+  font-size: 1.0625rem;
+  font-weight: 400;
+  line-height: 1.85;
+  color: var(--rise-muted);
+}
+
+.rise-editor-surface,
+.rise-preview-surface {
+  background: var(--rise-surface);
+  color: var(--rise-text);
+}
+
+.rise-rich-editor .ProseMirror {
+  color: var(--rise-text);
+  font-family: var(--rise-body-font);
+  font-size: 1.0625rem;
+  font-weight: 400;
+  line-height: 1.85;
+  letter-spacing: normal;
+}
+
+.rise-rich-editor .ProseMirror p {
+  margin: 0 0 1rem;
+}
+
+.rise-rich-editor .ProseMirror h1 {
+  font-family: var(--rise-heading-font);
+  font-size: clamp(2.2rem, 3.5vw, 2.75rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.012em;
+  margin: 0 0 1rem;
+}
+
+.rise-rich-editor .ProseMirror h2 {
+  font-family: var(--rise-heading-font);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.012em;
+  margin: 1.75rem 0 0.8rem;
+}
+
+.rise-rich-editor .ProseMirror h3 {
+  font-family: var(--rise-heading-font);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.008em;
+  margin: 1.5rem 0 0.7rem;
+}
+
+.rise-rich-editor .ProseMirror ul,
+.rise-rich-editor .ProseMirror ol,
+.rise-content ul,
+.rise-content ol {
+  margin: 0 0 1rem;
+  padding-left: 1.5rem;
+}
+
+.rise-rich-editor .ProseMirror li,
+.rise-content li {
+  margin: 0.35rem 0;
+  line-height: 1.7;
+}
+
+.rise-content,
+.rise-content p,
+.rise-content li {
+  font-family: var(--rise-body-font);
+  font-size: 1.0625rem;
+  font-weight: 400;
+  line-height: 1.8;
+  color: var(--rise-text);
+}
+
+.rise-content h1 {
+  font-family: var(--rise-heading-font);
+  font-size: clamp(2.2rem, 3.5vw, 2.75rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.012em;
+}
+
+.rise-content h2 {
+  font-family: var(--rise-heading-font);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.012em;
+}
+
+.rise-content h3,
+.rise-content h4 {
+  font-family: var(--rise-heading-font);
+  font-weight: 600;
+  letter-spacing: -0.008em;
+}
+
+.rise-content [data-testid^="content-text-"] p {
+  margin: 0 0 0.5rem;
+}
+
+.rise-content [data-testid^="content-text-"] p:last-child {
+  margin-bottom: 0;
+}
+
+.rise-content [class*="text-slate-500"],
+.rise-content [class*="text-slate-600"],
+.rise-content [class*="text-gray-500"],
+.rise-content [class*="text-gray-600"] {
+  color: var(--rise-muted);
+}
+
+.rise-content [data-testid^="content-ai-quiz-"] h3,
+.rise-content [data-testid^="content-quiz-"] h3,
+.rise-content [data-testid^="content-assignment-"] h3 {
+  font-family: var(--rise-heading-font);
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.018em;
+  color: var(--rise-text);
+}
+
+.rise-content [data-testid^="content-ai-quiz-"] h4,
+.rise-content [data-testid^="content-quiz-"] h4,
+.rise-content [data-testid^="content-assignment-"] h4,
+.rise-content [data-testid^="content-assignment-"] h5 {
+  font-family: var(--rise-heading-font);
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--rise-text);
+}
+
+.rise-content [data-testid^="content-ai-quiz-"] p,
+.rise-content [data-testid^="content-ai-quiz-"] div,
+.rise-content [data-testid^="content-quiz-"] p,
+.rise-content [data-testid^="content-quiz-"] div,
+.rise-content [data-testid^="content-assignment-"] p,
+.rise-content [data-testid^="content-assignment-"] div,
+.rise-content [data-testid^="content-assignment-"] li,
+.rise-content [data-testid^="content-assignment-"] span {
+  font-family: var(--rise-body-font);
+}
+
+.rise-content [data-testid^="content-ai-quiz-"] p,
+.rise-content [data-testid^="content-quiz-"] p,
+.rise-content [data-testid^="content-assignment-"] p,
+.rise-content [data-testid^="content-assignment-"] li {
+  font-size: 1.0625rem;
+  line-height: 1.8;
+}
+
+.rise-content [data-testid^="content-ai-quiz-"] [class*="text-sm"],
+.rise-content [data-testid^="content-quiz-"] [class*="text-sm"],
+.rise-content [data-testid^="content-assignment-"] [class*="text-sm"],
+.rise-content [data-testid^="content-ai-quiz-"] [class*="text-xs"],
+.rise-content [data-testid^="content-quiz-"] [class*="text-xs"],
+.rise-content [data-testid^="content-assignment-"] [class*="text-xs"] {
+  font-size: 1rem;
+}
+
+.rise-editor-surface input,
+.rise-editor-surface textarea {
+  color: var(--rise-text);
+  font-family: var(--rise-body-font);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.rise-editor-surface label {
+  color: var(--rise-muted);
+  font-size: 0.75rem;
+}

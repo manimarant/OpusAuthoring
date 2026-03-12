@@ -1,0 +1,119 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="spaceGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </radialGradient>
+    <radialGradient id="planetGradient" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#4169E1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1E3A8A;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Space background -->
+  <rect width="800" height="450" fill="url(#spaceGradient)"/>
+  
+  <!-- Stars -->
+  <circle cx="100" cy="80" r="1" fill="white"/>
+  <circle cx="150" cy="120" r="1.5" fill="white"/>
+  <circle cx="200" cy="60" r="1" fill="white"/>
+  <circle cx="250" cy="140" r="1" fill="white"/>
+  <circle cx="320" cy="90" r="1.5" fill="white"/>
+  <circle cx="380" cy="130" r="1" fill="white"/>
+  <circle cx="450" cy="70" r="1" fill="white"/>
+  <circle cx="520" cy="110" r="1.5" fill="white"/>
+  <circle cx="580" cy="85" r="1" fill="white"/>
+  <circle cx="650" cy="125" r="1" fill="white"/>
+  <circle cx="700" cy="95" r="1.5" fill="white"/>
+  
+  <circle cx="120" cy="200" r="1" fill="white"/>
+  <circle cx="180" cy="180" r="1.5" fill="white"/>
+  <circle cx="280" cy="220" r="1" fill="white"/>
+  <circle cx="350" cy="190" r="1" fill="white"/>
+  <circle cx="480" cy="210" r="1.5" fill="white"/>
+  <circle cx="620" cy="185" r="1" fill="white"/>
+  <circle cx="680" cy="205" r="1" fill="white"/>
+  
+  <circle cx="80" cy="300" r="1.5" fill="white"/>
+  <circle cx="160" cy="320" r="1" fill="white"/>
+  <circle cx="240" cy="280" r="1" fill="white"/>
+  <circle cx="340" cy="310" r="1.5" fill="white"/>
+  <circle cx="420" cy="290" r="1" fill="white"/>
+  <circle cx="500" cy="330" r="1" fill="white"/>
+  <circle cx="600" cy="295" r="1.5" fill="white"/>
+  <circle cx="720" cy="315" r="1" fill="white"/>
+  
+  <!-- Large planet -->
+  <circle cx="650" cy="350" r="80" fill="url(#planetGradient)"/>
+  <!-- Planet rings -->
+  <ellipse cx="650" cy="350" rx="100" ry="20" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+  <ellipse cx="650" cy="350" rx="110" ry="25" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+  
+  <!-- Small moon -->
+  <circle cx="580" cy="280" r="15" fill="#C0C0C0"/>
+  
+  <!-- Telescope -->
+  <g transform="translate(100, 280)">
+    <!-- Tripod legs -->
+    <line x1="80" y1="150" x2="60" y2="120" stroke="#2C3E50" stroke-width="4"/>
+    <line x1="80" y1="150" x2="100" y2="120" stroke="#2C3E50" stroke-width="4"/>
+    <line x1="80" y1="150" x2="80" y2="120" stroke="#2C3E50" stroke-width="4"/>
+    
+    <!-- Telescope base -->
+    <circle cx="80" cy="120" r="8" fill="#34495E"/>
+    
+    <!-- Telescope tube -->
+    <rect x="30" y="115" width="100" height="10" fill="#2C3E50" rx="5"/>
+    <rect x="25" y="113" width="15" height="14" fill="#34495E" rx="7"/>
+    <rect x="125" y="117" width="20" height="6" fill="#34495E" rx="3"/>
+    
+    <!-- Eyepiece -->
+    <rect x="145" y="119" width="10" height="2" fill="#1A1A1A"/>
+  </g>
+  
+  <!-- Rocket -->
+  <g transform="translate(400, 100)">
+    <!-- Rocket body -->
+    <rect x="0" y="20" width="20" height="80" fill="#E0E0E0" rx="10"/>
+    <!-- Rocket tip -->
+    <polygon points="10,0 0,20 20,20" fill="#FF4444"/>
+    <!-- Fins -->
+    <polygon points="0,80 -8,100 0,100" fill="#666"/>
+    <polygon points="20,80 28,100 20,100" fill="#666"/>
+    <!-- Flame -->
+    <polygon points="5,100 10,120 15,100" fill="#FFA500"/>
+    <polygon points="7,100 10,110 13,100" fill="#FF6B35"/>
+    <!-- Window -->
+    <circle cx="10" cy="35" r="5" fill="#4A90E2"/>
+  </g>
+  
+  <!-- Satellite -->
+  <g transform="translate(250, 150)">
+    <!-- Satellite body -->
+    <rect x="0" y="10" width="30" height="20" fill="#C0C0C0" rx="2"/>
+    <!-- Solar panels -->
+    <rect x="-10" y="5" width="10" height="30" fill="#1E3A8A"/>
+    <rect x="30" y="5" width="10" height="30" fill="#1E3A8A"/>
+    <!-- Antenna -->
+    <line x1="15" y1="10" x2="15" y2="0" stroke="#666" stroke-width="2"/>
+    <circle cx="15" cy="0" r="2" fill="#FF4444"/>
+  </g>
+  
+  <!-- Constellation lines -->
+  <g stroke="rgba(255,255,255,0.3)" stroke-width="1" fill="none">
+    <line x1="100" y1="80" x2="150" y2="120"/>
+    <line x1="150" y1="120" x2="200" y2="60"/>
+    <line x1="320" y1="90" x2="380" y2="130"/>
+    <line x1="520" y1="110" x2="580" y2="85"/>
+  </g>
+  
+  <!-- Nebula effect -->
+  <g opacity="0.4">
+    <ellipse cx="300" cy="300" rx="80" ry="40" fill="rgba(138, 43, 226, 0.3)"/>
+    <ellipse cx="320" cy="310" rx="60" ry="30" fill="rgba(75, 0, 130, 0.3)"/>
+  </g>
+  
+  <!-- Title -->
+  <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white">ASTRONOMY</text>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.8)">Space &amp; Universe</text>
+</svg>
