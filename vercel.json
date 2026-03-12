@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist/public",
   "functions": {
-    "api/[...route].ts": {
+    "api/[...route].js": {
       "maxDuration": 300,
       "includeFiles": "server/app.js"
     }
