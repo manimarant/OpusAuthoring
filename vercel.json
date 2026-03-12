@@ -13,7 +13,7 @@
       "destination": "/api/uploads/$1"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
