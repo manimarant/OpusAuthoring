@@ -9,6 +9,11 @@ const appPromise = (async () => {
 })();
 
 export default async function handler(req: any, res: any) {
+  // Ensure the URL starts with /api for the Express routes to match
+  if (req.url && !req.url.startsWith('/api')) {
+    req.url = '/api' + (req.url.startsWith('/') ? '' : '/') + req.url;
+  }
+  console.log(`API Request: ${req.method} ${req.url}`);
   const app = await appPromise;
   return app(req, res);
 }

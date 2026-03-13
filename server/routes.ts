@@ -55,10 +55,13 @@ const mediaUpload = multer({
   }
 });
 
+import { getUploadsDir } from "./app";
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Serve uploaded files statically
-  const uploadsPath = path.join(process.cwd(), 'uploads');
+  const uploadsPath = getUploadsDir();
   app.use('/uploads', express.static(uploadsPath));
+  app.use('/api/uploads', express.static(uploadsPath));
   
   // Course routes
   app.get("/api/courses", async (req, res) => {
