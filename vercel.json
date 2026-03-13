@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist/public",
   "functions": {
-    "api/[...route].cjs": {
+    "api/[...route].js": {
       "maxDuration": 300
     }
   },
