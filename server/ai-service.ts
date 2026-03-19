@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { AiGenerateTextRequest, AiGenerateQuizRequest } from "@shared/schema";
+import type { AiGenerateTextRequest, AiGenerateQuizRequest, AiGenerateVideoRequest } from "@shared/schema";
 
 // Using Gemini Flash model  
 const apiKey = process.env.GEMINI_API_KEY || "";
@@ -1306,5 +1306,321 @@ export async function generateCourseOutline(course: { title: string; topic:strin
     model: "gemini-flash-latest",
   };
   return fallback;
+}
+
+// Tavus.io Video Generation Service
+export async function generateVideoWithTavus(
+  request: AiGenerateVideoRequest,
+  courseContext?: { title: string; topic: string; objectives: string }
+): Promise<{
+  videoUrl: string;
+  videoId: string;
+  prompt: string;
+  duration: number;
+  status: string;
+  isAIGenerated: boolean;
+}> {
+  const tavusApiKey = process.env.TAVUS_API_KEY;
+  const tavusReplicaId = process.env.TAVUS_REPLICA_ID;
+  
+  if (!tavusApiKey) {
+    console.warn("⚠️  TAVUS_API_KEY not found. Video generation unavailable.");
+    throw new Error("Tavus API key not configured");
+  }
+
+  if (!tavusReplicaId) {
+    console.warn("⚠️  TAVUS_REPLICA_ID not found. Video generation unavailable.");
+    throw new Error("Tavus replica ID not configured");
+  }
+  
+  // Build enhanced prompt with course context
+  let enhancedPrompt = request.prompt;
+  if (request.includeCourseContext && courseContext) {
+    enhancedPrompt = `Course: ${courseContext.title}
+Topic: ${courseContext.topic}
+
+Video Content: ${request.prompt}`;
+  }
+  
+  // Convert duration enum to seconds
+  const durationMap = {
+    'short': 5,
+    'medium': 10,
+    'long': 15
+  };
+  const durationSeconds = durationMap[request.duration];
+  const maxWordCount = Math.max(8, Math.floor(durationSeconds * 2.2));
+  const condensedScript = enhancedPrompt
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, maxWordCount)
+    .join(" ");
+  
+  try {
+    console.log(`🎥 Starting Tavus video generation...`);
+    
+    // Create video generation request
+    const response = await fetch('https://tavusapi.com/v2/videos', {
+      method: 'POST',
+      headers: {
+        'x-api-key': tavusApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        script: condensedScript,
+        replica_id: tavusReplicaId,
+        video_name: `Course Video - ${Date.now()}`,
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error("Tavus API Error:", errorData);
+      
+      if (response.status === 401) {
+        throw new Error("Invalid Tavus API key");
+      } else if (response.status === 402) {
+        throw new Error("Insufficient credits for Tavus API");
+      } else if (response.status === 429) {
+        throw new Error("Rate limit exceeded for Tavus API");
+      } else {
+        throw new Error(`Tavus API error: ${response.status} - ${errorData?.message || 'Unknown error'}`);
+      }
+    }
+    
+    const data = await response.json();
+    const videoId = data.video_id;
+    
+    if (!videoId) {
+      throw new Error("No video ID returned from Tavus API");
+    }
+    
+    console.log(`🔄 Polling Tavus API for video generation (ID: ${videoId})...`);
+    
+    // Poll for video completion
+    let attempts = 0;
+    const maxAttempts = 120; // 10 minutes max wait time (5s intervals)
+    
+    while (attempts < maxAttempts) {
+      await sleep(5000); // Wait 5 seconds between polls
+      attempts++;
+      
+      try {
+        const statusResponse = await fetch(`https://tavusapi.com/v2/videos/${videoId}`, {
+          headers: {
+            'x-api-key': tavusApiKey,
+          },
+        });
+        
+        if (!statusResponse.ok) {
+          console.error(`Video status polling failed: ${statusResponse.status}`);
+          continue;
+        }
+        
+        const statusData = await statusResponse.json();
+        
+        if (statusData.status === 'ready') {
+          const videoUrl = statusData.download_url || statusData.hosted_url;
+          if (!videoUrl) {
+            throw new Error("No video URL in completed response from Tavus API");
+          }
+          
+          console.log(`✅ Tavus video generated successfully in ${attempts * 5} seconds`);
+          return {
+            videoUrl,
+            videoId,
+            prompt: condensedScript,
+            duration: durationSeconds,
+            status: 'completed',
+            isAIGenerated: true
+          };
+        } else if (statusData.status === 'error') {
+          throw new Error(`Tavus video generation failed: ${statusData.status_details || statusData.error_message || 'Unknown error'}`);
+        }
+        
+        // Status is still pending, continue polling.
+        if (attempts % 12 === 0) { // Every minute
+          console.log(`⏳ Video still generating... (${Math.floor(attempts * 5 / 60)}m ${(attempts * 5) % 60}s elapsed, status: ${statusData.status})`);
+        }
+        
+      } catch (pollError: any) {
+        console.error(`Video polling attempt ${attempts} failed:`, pollError.message);
+        if (attempts >= maxAttempts - 1) {
+          throw pollError;
+        }
+      }
+    }
+    
+    throw new Error(`Tavus video generation timed out after ${maxAttempts * 5 / 60} minutes`);
+    
+  } catch (error: any) {
+    console.error("❌ Tavus video generation failed:", error.message);
+    throw error;
+  }
+}
+
+// Generate video prompt using Gemini for better video descriptions
+export async function generateVideoPrompt(
+  chapterTitle: string,
+  moduleTitle?: string,
+  courseContext?: { title: string; topic: string; objectives: string },
+  options?: { sourceText?: string; duration?: string; style?: string }
+): Promise<{ videoPrompt: string; suggestedNarration: string; keyPoints: string[] }> {
+  const systemPrompt = `You are an expert educational video script writer and instructional designer.
+Create a detailed video script and narration for educational content.
+The video should be engaging, informative, and appropriate for the specified duration.
+Return JSON only with keys:
+- videoPrompt: A detailed description of visual elements and scenes for the video
+- suggestedNarration: The actual script/narration text for the video
+- keyPoints: An array of 3-5 key learning points the video should cover`;
+
+  let userMessage = `Create a video script and visual description for an educational video with the following details:\n\n`;
+  userMessage += `Chapter Title: ${chapterTitle}\n`;
+  
+  if (moduleTitle) {
+    userMessage += `Module: ${moduleTitle}\n`;
+  }
+  
+  if (courseContext) {
+    userMessage += `Course: ${courseContext.title}\n`;
+    userMessage += `Topic: ${courseContext.topic}\n`;
+    userMessage += `Objectives: ${courseContext.objectives}\n`;
+  }
+
+  if (options?.sourceText) {
+    userMessage += `Chapter content excerpt: ${options.sourceText.slice(0, 3000)}\n`;
+  }
+
+  if (options?.duration) {
+    const durationText = options.duration === 'short' ? '5 seconds' : 
+                        options.duration === 'medium' ? '10 seconds' : '15 seconds';
+    userMessage += `Target Duration: ${durationText}\n`;
+  }
+
+  if (options?.style) {
+    userMessage += `Video Style: ${options.style}\n`;
+  }
+  
+  userMessage += `\nRequirements:
+1. Create engaging narration appropriate for the target duration
+2. Describe visual elements that support the educational content
+3. Include clear learning objectives and key takeaways
+4. Make the content accessible and easy to understand
+5. Structure the script with clear introduction, main content, and conclusion
+6. Keep the narration concise enough to fit fully within the requested duration and never exceed 15 seconds
+
+Return JSON with keys: "videoPrompt", "suggestedNarration", and "keyPoints"`;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const model = ai.getGenerativeModel({ 
+        model: "gemini-flash-latest",
+        systemInstruction: systemPrompt,
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      });
+      
+      const result = await model.generateContent(userMessage);
+      const response = await result.response;
+      let text = (response.text() || "").trim();
+      
+      // Parse JSON response
+      const jsonMatch = text.match(/```(json)?\s*([\s\S]*?)\s*```/);
+      if (jsonMatch && jsonMatch[2]) {
+        text = jsonMatch[2];
+      }
+      
+      const parsed = JSON.parse(text);
+      return {
+        videoPrompt: parsed.videoPrompt || `Educational video about ${chapterTitle}`,
+        suggestedNarration: parsed.suggestedNarration || `Learn about ${chapterTitle} in this educational video.`,
+        keyPoints: parsed.keyPoints || [`Understanding ${chapterTitle}`, "Key concepts and principles", "Practical applications"]
+      };
+    } catch (error: any) {
+      console.error(`❌ Video prompt generation attempt ${attempt} failed:`, {
+        message: error.message,
+        status: error.status,
+        statusText: error.statusText
+      });
+      
+      if (attempt < 3 && (error.status >= 500 || error.message?.includes("temporarily unavailable") || error.message?.includes("overloaded"))) {
+        const delayMs = attempt * 2000; // 2s, 4s
+        await sleep(delayMs);
+        continue;
+      }
+      
+      break;
+    }
+  }
+
+  console.warn('AI video prompt generation failed after all retries. Using fallback prompt.');
+  // Fallback: create a basic prompt
+  return {
+    videoPrompt: `Educational video explaining ${chapterTitle}${moduleTitle ? ` from ${moduleTitle}` : ''}, featuring clear narration and supporting visuals`,
+    suggestedNarration: `Welcome to this educational video about ${chapterTitle}. In this video, we'll explore the key concepts and help you understand the important principles.`,
+    keyPoints: [`Understanding ${chapterTitle}`, "Key concepts and principles", "Practical applications"]
+  };
+}
+
+// Complete video generation with enhanced prompting
+export async function generateCompleteVideo(
+  chapterTitle: string,
+  moduleTitle?: string,
+  courseContext?: { title: string; topic: string; objectives: string },
+  options?: { 
+    sourceText?: string; 
+    duration?: 'short' | 'medium' | 'long';
+    style?: 'professional' | 'casual' | 'educational' | 'animated';
+    voiceType?: 'male' | 'female' | 'neutral';
+    aspectRatio?: '16:9' | '9:16' | '1:1';
+  }
+): Promise<{
+  videoUrl: string;
+  videoId: string;
+  videoPrompt: string;
+  suggestedNarration: string;
+  keyPoints: string[];
+  chapterTitle: string;
+  isAIGenerated: boolean;
+}> {
+  
+  try {
+    // Step 1: Generate enhanced video prompt and narration using Gemini
+    const { videoPrompt, suggestedNarration, keyPoints } = await generateVideoPrompt(
+      chapterTitle,
+      moduleTitle,
+      courseContext,
+      options
+    );
+    
+    // Step 2: Generate actual video with Tavus
+    const videoRequest: AiGenerateVideoRequest = {
+      moduleId: 'temp', // This will be provided by the API call
+      prompt: suggestedNarration, // Use the generated narration as the script
+      duration: options?.duration || 'medium',
+      style: options?.style || 'educational',
+      voiceType: options?.voiceType || 'neutral',
+      language: 'en',
+      aspectRatio: options?.aspectRatio || '16:9',
+      includeCourseContext: true,
+      backgroundMusic: false
+    };
+    
+    const videoResult = await generateVideoWithTavus(videoRequest, courseContext);
+    
+    return {
+      ...videoResult,
+      videoPrompt,
+      suggestedNarration,
+      keyPoints,
+      chapterTitle
+    };
+    
+  } catch (error: any) {
+    console.error("❌ Complete video generation failed:", error.message);
+    throw error;
+  }
 }
 

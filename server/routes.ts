@@ -16,12 +16,13 @@ import {
   aiGenerateTextSchema,
   aiGenerateQuizSchema,
   aiGenerateAssignmentSchema,
+  aiGenerateVideoSchema,
   type AiGenerateQuizRequest,
   type CourseWithContent,
   type MediaAssetType,
 } from "@shared/schema";
 import { z } from "zod";
-import { generateText, generateQuiz, generateAssignment, checkRateLimit, generateCourseOutline, generateChapterImagePrompt, generateImagePromptsForOutline, generateCompleteChapterImage } from "./ai-service";
+import { generateText, generateQuiz, generateAssignment, checkRateLimit, generateCourseOutline, generateChapterImagePrompt, generateImagePromptsForOutline, generateCompleteChapterImage, generateVideoWithTavus, generateVideoPrompt, generateCompleteVideo } from "./ai-service";
 import { selectStockImage, refreshStockImageCatalog, getStockImageCatalog } from "./stock-images";
 import { createScormPackage } from "./scorm-service";
 
@@ -1948,6 +1949,238 @@ app.post("/api/ai/generate-assignment", async (req, res) => {
             res.status(500).json({
                 message: "Failed to generate assignment"
             });
+        }
+    }
+});
+
+// AI Video Generation endpoint
+app.post("/api/ai/generate-video", async (req, res) => {
+    try {
+        // Rate limiting check
+        const clientId = req.ip || 'unknown';
+        const rateLimit = checkRateLimit(clientId);
+
+        if (!rateLimit.allowed) {
+            return res.status(429).json({
+                message: "Rate limit exceeded. Please try again later.",
+                retryAfter: rateLimit.retryAfter
+            });
+        }
+
+        // Validate request body
+        const requestData = aiGenerateVideoSchema.parse(req.body);
+
+        // Get course context if requested
+        let courseContext;
+        if (requestData.includeCourseContext) {
+            try {
+                const module = await storage.getModule(requestData.moduleId);
+                if (module) {
+                    const course = await storage.getCourse(module.courseId);
+                    if (course) {
+                        courseContext = {
+                            title: course.title,
+                            topic: course.topic,
+                            objectives: course.learningObjectives
+                        };
+                    }
+                }
+            } catch (contextError) {
+                // Continue without context if there's an error fetching it
+                console.warn("Failed to get course context for video generation:", contextError);
+            }
+        }
+
+        // Generate video
+        const result = await generateVideoWithTavus(requestData, courseContext);
+
+        res.json({
+            videoUrl: result.videoUrl,
+            videoId: result.videoId,
+            prompt: result.prompt,
+            duration: result.duration,
+            status: result.status,
+            isAIGenerated: result.isAIGenerated
+        });
+
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            res.status(400).json({
+                message: "Invalid request data",
+                errors: error.errors
+            });
+        } else if (error instanceof Error) {
+            if (error.message.includes("Rate limit exceeded")) {
+                res.status(429).json({
+                    message: error.message
+                });
+            } else if (error.message.includes("Invalid") && error.message.includes("API key")) {
+                res.status(401).json({
+                    message: "Video generation service configuration error"
+                });
+            } else if (error.message.includes("Insufficient credits")) {
+                res.status(402).json({
+                    message: error.message
+                });
+            } else if (error.message.includes("service is temporarily unavailable") || error.message.includes("timed out")) {
+                res.status(503).json({
+                    message: error.message
+                });
+            } else {
+                console.error("AI video generation error:", error);
+                res.status(500).json({
+                    message: "Failed to generate video",
+                    error: error.message
+                });
+            }
+        } else {
+            console.error("AI video generation error:", error);
+            res.status(500).json({
+                message: "Failed to generate video"
+            });
+        }
+    }
+});
+
+// Video generation status endpoint
+app.get("/api/ai/video-status/:videoId", async (req, res) => {
+    try {
+        const { videoId } = req.params;
+        const tavusApiKey = process.env.TAVUS_API_KEY;
+        
+        if (!tavusApiKey) {
+            return res.status(503).json({
+                message: "Video generation service not configured"
+            });
+        }
+
+        const response = await fetch(`https://tavusapi.com/v2/videos/${videoId}`, {
+            headers: {
+                'x-api-key': tavusApiKey,
+            },
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to get video status: ${response.status}`);
+        }
+        
+        const statusData = await response.json();
+        const normalizedStatus =
+            statusData.status === "ready"
+                ? "completed"
+                : statusData.status === "error"
+                  ? "failed"
+                  : statusData.status;
+        const progressParts =
+            typeof statusData.generation_progress === "string"
+                ? statusData.generation_progress.split("/").map((value: string) => Number(value))
+                : null;
+        const progress =
+            progressParts && progressParts.length === 2 && progressParts.every((value: number) => Number.isFinite(value)) && progressParts[1] > 0
+                ? Math.round((progressParts[0] / progressParts[1]) * 100)
+                : statusData.progress || 0;
+        
+        res.json({
+            videoId,
+            status: normalizedStatus,
+            videoUrl: statusData.download_url || statusData.hosted_url,
+            progress,
+            error: statusData.error_message || statusData.status_details
+        });
+        
+    } catch (error) {
+        console.error("Failed to get video status:", error);
+        res.status(500).json({
+            message: "Failed to get video status",
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+// Generate complete video with enhanced prompting
+app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
+    try {
+        const { moduleId } = req.params;
+        const {
+            chapterTitle,
+            moduleTitle,
+            sourceText,
+            duration = 'medium',
+            style = 'educational',
+            voiceType = 'neutral',
+            aspectRatio = '16:9'
+        } = req.body;
+
+        if (!chapterTitle) {
+            return res.status(400).json({
+                message: "Chapter title is required"
+            });
+        }
+
+        // Rate limiting check
+        const clientId = req.ip || 'unknown';
+        const rateLimit = checkRateLimit(clientId);
+
+        if (!rateLimit.allowed) {
+            return res.status(429).json({
+                message: "Rate limit exceeded. Please try again later.",
+                retryAfter: rateLimit.retryAfter
+            });
+        }
+
+        // Get course context
+        let courseContext;
+        try {
+            const module = await storage.getModule(moduleId);
+            if (module) {
+                const course = await storage.getCourse(module.courseId);
+                if (course) {
+                    courseContext = {
+                        title: course.title,
+                        topic: course.topic,
+                        objectives: course.learningObjectives
+                    };
+                }
+            }
+        } catch (contextError) {
+            console.warn("Failed to get course context for complete video generation:", contextError);
+        }
+
+        // Generate complete video
+        const result = await generateCompleteVideo(
+            chapterTitle,
+            moduleTitle,
+            courseContext,
+            {
+                sourceText,
+                duration,
+                style,
+                voiceType,
+                aspectRatio
+            }
+        );
+
+        res.json(result);
+
+    } catch (error) {
+        console.error("Failed to generate complete video:", error);
+        if (error instanceof Error) {
+            if (error.message.includes("Rate limit exceeded")) {
+                res.status(429).json({ message: error.message });
+            } else if (error.message.includes("Invalid") && error.message.includes("API key")) {
+                res.status(401).json({ message: "Video generation service configuration error" });
+            } else if (error.message.includes("Insufficient credits")) {
+                res.status(402).json({ message: error.message });
+            } else if (error.message.includes("timed out")) {
+                res.status(503).json({ message: error.message });
+            } else {
+                res.status(500).json({
+                    message: "Failed to generate complete video",
+                    error: error.message
+                });
+            }
+        } else {
+            res.status(500).json({ message: "Failed to generate complete video" });
         }
     }
 });

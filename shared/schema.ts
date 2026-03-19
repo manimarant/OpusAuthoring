@@ -321,9 +321,22 @@ export const aiGenerateAssignmentSchema = z.object({
   includeCourseContext: z.boolean().default(true),
 });
 
+export const aiGenerateVideoSchema = z.object({
+  moduleId: z.string(),
+  prompt: z.string().min(1, 'Video content description is required'),
+  duration: z.enum(['short', 'medium', 'long']).default('medium'), // 5s, 10s, 15s
+  style: z.enum(['professional', 'casual', 'educational', 'animated']).default('educational'),
+  voiceType: z.enum(['male', 'female', 'neutral']).default('neutral'),
+  language: z.string().default('en'),
+  aspectRatio: z.enum(['16:9', '9:16', '1:1']).default('16:9'),
+  includeCourseContext: z.boolean().default(true),
+  backgroundMusic: z.boolean().default(false),
+});
+
 export type AiGenerateTextRequest = z.infer<typeof aiGenerateTextSchema>;
 export type AiGenerateQuizRequest = z.infer<typeof aiGenerateQuizSchema>;
 export type AiGenerateAssignmentRequest = z.infer<typeof aiGenerateAssignmentSchema>;
+export type AiGenerateVideoRequest = z.infer<typeof aiGenerateVideoSchema>;
 
 export type ModuleWithContent = Module & {
   contentBlocks: ContentBlock[];

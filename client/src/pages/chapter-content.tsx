@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useMemo } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Eye, PanelLeft, Plus, Sparkles, Upload } from "lucide-react";
@@ -19,6 +18,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ContentBlock, Course, Module } from "@shared/schema";
+import AiVideoGenerationDialog from "@/components/ai/ai-video-generation-dialog";
 import ContentBlockComponent from "@/components/course/content-block";
 import ContentBlockMenu from "@/components/course/content-block-menu";
 import CourseNavigation from "@/components/course/course-navigation";
@@ -72,6 +72,8 @@ export default function ModuleContent() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [isAiSubmitting, setIsAiSubmitting] = useState(false);
   const [activeInsertIndex, setActiveInsertIndex] = useState<number | null>(null);
+  const [isAiVideoDialogOpen, setIsAiVideoDialogOpen] = useState(false);
+  const [aiVideoInsertIndex, setAiVideoInsertIndex] = useState<number | null>(null);
   const [ltiPlatformName, setLtiPlatformName] = useState("");
   const [ltiPlatformIssuer, setLtiPlatformIssuer] = useState("");
   const [ltiClientId, setLtiClientId] = useState("");
@@ -150,6 +152,33 @@ export default function ModuleContent() {
     : undefined;
   const displayModule = parentModule ?? currentModule;
   const displayChapter = parentModule ? currentModule : undefined;
+  const chapterOptions = useMemo(() => {
+    const chapters = (courseModules || [])
+      .filter((candidate) => candidate.parentModuleId)
+      .sort((a, b) => parseInt(a.order) - parseInt(b.order))
+      .map((candidate) => {
+        const parent = courseModules?.find((moduleItem) => moduleItem.id === candidate.parentModuleId);
+        return {
+          title: candidate.title,
+          moduleTitle: parent?.title,
+          sourceText: String(candidate.description || "").replace(/<[^>]*>/g, "").trim(),
+        };
+      });
+
+    if (chapters.length > 0) {
+      return chapters;
+    }
+
+    return currentModule
+      ? [
+          {
+            title: currentModule.title,
+            moduleTitle: displayModule?.title,
+            sourceText: String(currentModule.description || "").replace(/<[^>]*>/g, "").trim(),
+          },
+        ]
+      : [];
+  }, [courseModules, currentModule, displayModule?.title]);
   const fallbackModuleLocation = useMemo(() => {
     if (!courseModules || courseModules.length === 0) {
       return null;
@@ -461,6 +490,13 @@ export default function ModuleContent() {
   const handleAddContentBlock = async (type: string, content: any, insertIndex = orderedBlocks.length) => {
     const order = insertIndex.toString();
 
+    if (type === "ai-video") {
+      setAiVideoInsertIndex(insertIndex);
+      setIsAiVideoDialogOpen(true);
+      setActiveInsertIndex(null);
+      return;
+    }
+
     if (type === "ai-quiz") {
       try {
         toast({
@@ -594,6 +630,52 @@ export default function ModuleContent() {
 
     await insertBlockAt(type, content, insertIndex);
   };
+
+  const handleAiVideoGenerated = useCallback(
+    async ({
+      videoUrl,
+      videoId,
+      chapterTitle,
+      duration,
+    }: {
+      videoUrl: string;
+      videoId: string;
+      chapterTitle: string;
+      duration: number;
+    }) => {
+      const nextInsertIndex = aiVideoInsertIndex ?? orderedBlocks.length;
+      const videoContent = {
+        title: chapterTitle,
+        url: videoUrl,
+        duration: `${duration}s`,
+        videoId,
+        provider: "tavus",
+        isAIGenerated: true,
+      };
+
+      if (nextInsertIndex === orderedBlocks.length) {
+        createContentBlockMutation.mutate({
+          type: "video",
+          content: videoContent,
+          order: nextInsertIndex.toString(),
+          metadata: {
+            isAiGenerated: true,
+            successTitle: "Video generated successfully",
+            successDescription: `Added a ${duration}s Tavus video for ${chapterTitle}.`,
+          },
+        });
+      } else {
+        await insertBlockAt("video", videoContent, nextInsertIndex, {
+          isAiGenerated: true,
+          successTitle: "Video generated successfully",
+          successDescription: `Added a ${duration}s Tavus video for ${chapterTitle}.`,
+        });
+      }
+
+      setAiVideoInsertIndex(null);
+    },
+    [aiVideoInsertIndex, createContentBlockMutation, insertBlockAt, orderedBlocks.length],
+  );
 
   const handlePackageCourse = async () => {
     if (!course) {
@@ -925,6 +1007,22 @@ export default function ModuleContent() {
         </DialogContent>
       </Dialog>
 
+      <AiVideoGenerationDialog
+        open={isAiVideoDialogOpen}
+        onOpenChange={(open) => {
+          setIsAiVideoDialogOpen(open);
+          if (!open) {
+            setAiVideoInsertIndex(null);
+          }
+        }}
+        moduleId={moduleId}
+        chapterOptions={chapterOptions}
+        defaultChapterTitle={displayChapter?.title || currentModule?.title}
+        onVideoGenerated={(video) => {
+          void handleAiVideoGenerated(video);
+        }}
+      />
+
       <div className="min-h-screen bg-white">
         <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex h-16 items-center justify-between px-4 sm:px-6">
@@ -1025,7 +1123,7 @@ export default function ModuleContent() {
                       onInput={
                         isPreviewMode
                           ? undefined
-                          : (event: React.FormEvent<HTMLHeadingElement>) => setCourseTitleDraft(event.currentTarget.textContent || "")
+                          : (event: FormEvent<HTMLHeadingElement>) => setCourseTitleDraft(event.currentTarget.textContent || "")
                       }
                       onBlur={isPreviewMode ? undefined : () => void saveCourseTitle()}
                       onKeyDown={(event) => {
@@ -1054,7 +1152,7 @@ export default function ModuleContent() {
                       onInput={
                         isPreviewMode
                           ? undefined
-                          : (event: React.FormEvent<HTMLParagraphElement>) => setCourseObjectiveDraft(event.currentTarget.textContent || "")
+                          : (event: FormEvent<HTMLParagraphElement>) => setCourseObjectiveDraft(event.currentTarget.textContent || "")
                       }
                       onBlur={isPreviewMode ? undefined : () => void saveCourseObjective()}
                       className={`rise-lesson-description max-w-4xl whitespace-pre-wrap text-slate-700 ${isPreviewMode ? "" : "outline-none"}`}

@@ -47,7 +47,7 @@ const quickTools = [
     icon: Image,
   },
   {
-    type: "video",
+    type: "ai-video",
     title: "AI Video",
     icon: Video,
   },
@@ -103,6 +103,14 @@ const allTools = [
         icon: Palette,
         color: "bg-pink-50 dark:bg-pink-950/30",
         iconColor: "text-pink-600 dark:text-pink-400",
+      },
+      { 
+        type: "ai-video", 
+        title: "AI Video", 
+        description: "Generate a short Tavus presenter video for the selected chapter",
+        icon: Video,
+        color: "bg-red-50 dark:bg-red-950/30",
+        iconColor: "text-red-600 dark:text-red-400",
       },
       { 
         type: "ai-audio", 
@@ -298,6 +306,8 @@ export default function ContentBlockMenu({ onAddContent, onClose, mode = "defaul
         return { url: "", alt: "", caption: "" };
       case "gallery":
         return { images: [], layout: "grid" };
+      case "ai-video":
+        return { title: "", url: "#", duration: "", provider: "tavus" };
       case "ai-audio":
       case "audio":
         return { title: "", description: "", url: "#", duration: "" };
