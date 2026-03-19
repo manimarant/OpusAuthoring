@@ -597,7 +597,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                             isGenerated: true
                         };
 
-                        console.log("? AI Audio content generated successfully");
                     } catch (aiError) {
                         console.error('Failed to generate AI audio content:', aiError);
                         // Continue with default content if AI generation fails
@@ -618,7 +617,12 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
         if (contentBlockData.type === 'ai-image') {
             try {
                 const prompt = (contentBlockData as any).content?.prompt || "Illustration related to the lesson";
-                const url = await mockGenerateImage(prompt, undefined, prompt);
+                // Generate placeholder image URL based on prompt
+                const imageId = Math.abs(prompt.split('').reduce((a: number, b: string) => {
+                    a = ((a << 5) - a) + b.charCodeAt(0);
+                    return a & a;
+                }, 0));
+                const url = `https://picsum.photos/seed/${imageId}/800/400`;
                 contentBlockData.content = {
                     url,
                     caption: (contentBlockData as any).content?.caption || "",
@@ -635,13 +639,10 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                 ? contentBlockData.content as { questions?: unknown[] }
                 : undefined;
             if (contentBlockData.type === 'ai-quiz' && (!quizContent?.questions || quizContent.questions.length === 0)) {
-                console.log("?? Auto-generating quiz questions for AI Quiz block...");
                 const module = await storage.getModule(req.params.moduleId);
                 if (module) {
-                    console.log("?? Module found:", module.title);
                     const course = await storage.getCourse(module.courseId);
                     if (course) {
-                        console.log("?? Course found:", course.title);
                         try {
                             // Create a quiz generation request based on module content
                             const quizRequest: AiGenerateQuizRequest = {
@@ -660,10 +661,8 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                                 objectives: course.learningObjectives
                             };
 
-                            console.log("?? Generating quiz with AI...");
                             // Generate quiz questions automatically
                             const quizResult = await generateQuiz(quizRequest, courseContext);
-                            console.log("? Quiz generated successfully:", quizResult.questions.length, "questions");
 
                             // Set the generated quiz as default content without a title
                             contentBlockData.content = {
@@ -683,7 +682,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                             };
                         }
                     } else {
-                        console.log("? Course not found for module");
                         contentBlockData.content = {
                             title: "",
                             description: "",
@@ -692,7 +690,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                         };
                     }
                 } else {
-                    console.log("? Module not found");
                     // Fallback if module not found
                     contentBlockData.content = {
                         title: "",
@@ -703,7 +700,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                 }
             } else if (contentBlockData.type === 'quiz') {
                 // Regular quiz block - initialize with empty structure
-                console.log("?? Initializing regular quiz block...");
                 contentBlockData.content = {
                     title: "",
                     description: "",
@@ -712,7 +708,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                 };
             } else {
                 // AI quiz with questions already provided - keep them
-                console.log("? AI Quiz block already has questions, skipping generation");
             }
         }
 
@@ -722,13 +717,10 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                 ? contentBlockData.content as { tasks?: unknown[] }
                 : undefined;
             if (contentBlockData.type === 'ai-assignment' && (!assignmentContent?.tasks || assignmentContent.tasks.length === 0)) {
-                console.log("?? Auto-generating assignment for AI Assignment block...");
                 const module = await storage.getModule(req.params.moduleId);
                 if (module) {
-                    console.log("?? Module found:", module.title);
                     const course = await storage.getCourse(module.courseId);
                     if (course) {
-                        console.log("?? Course found:", course.title);
                         try {
                             // Create an assignment generation request based on module content
                             const assignmentRequest = {
@@ -745,10 +737,8 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                                 objectives: course.learningObjectives
                             };
 
-                            console.log("?? Generating assignment with AI...");
                             // Generate assignment automatically
                             const assignmentResult = await generateAssignment(assignmentRequest, courseContext);
-                            console.log("? Assignment generated successfully");
 
                             // Set the generated assignment as default content
                             contentBlockData.content = {
@@ -757,7 +747,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                             };
                         } catch (assignmentError) {
                             // Assignment generation failed, continue with empty content
-                            console.error("? Assignment generation failed:", assignmentError);
                             contentBlockData.content = {
                                 title: "",
                                 objectives: [],
@@ -775,7 +764,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                             };
                         }
                     } else {
-                        console.log("? Course not found for module");
                         contentBlockData.content = {
                             title: "",
                             objectives: [],
@@ -793,7 +781,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                         };
                     }
                 } else {
-                    console.log("? Module not found");
                     // Fallback if module not found
                     contentBlockData.content = {
                         title: "",
@@ -813,7 +800,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                 }
             } else if (contentBlockData.type === 'assignment') {
                 // Regular assignment block - initialize with empty structure
-                console.log("?? Initializing regular assignment block...");
                 contentBlockData.content = {
                     title: "",
                     objectives: [],
@@ -831,13 +817,10 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                 };
             } else {
                 // AI assignment with content already provided - keep it
-                console.log("? AI Assignment block already has content, skipping generation");
             }
         }
 
-        console.log("?? Saving content block with data:", JSON.stringify(contentBlockData, null, 2));
         const contentBlock = await storage.createContentBlock(contentBlockData);
-        console.log("? Content block created:", contentBlock.id, "type:", contentBlock.type, "content:", JSON.stringify(contentBlock.content, null, 2));
         res.status(201).json(contentBlock);
     } catch (error) {
         if (error instanceof z.ZodError) {
@@ -861,10 +844,8 @@ app.get("/api/content-blocks/:id", async (req, res) => {
                 message: "Content block not found"
             });
         }
-        console.log("?? Retrieved content block:", contentBlock.id, "type:", contentBlock.type, "content:", JSON.stringify(contentBlock.content, null, 2));
         res.json(contentBlock);
     } catch (error) {
-        console.error("? Error fetching content block:", error);
         res.status(500).json({
             message: "Failed to fetch content block"
         });
@@ -874,17 +855,11 @@ app.get("/api/content-blocks/:id", async (req, res) => {
 app.put("/api/content-blocks/:id", async (req, res) => {
     try {
         const updates = insertContentBlockSchema.partial().parse(req.body);
-        if (updates.order !== undefined) {
-            console.log(`[DRAG] Updating block ${req.params.id.substring(0, 8)} order to "${updates.order}"`);
-        }
         const contentBlock = await storage.updateContentBlock(req.params.id, updates);
         if (!contentBlock) {
             return res.status(404).json({
                 message: "Content block not found"
             });
-        }
-        if (updates.order !== undefined) {
-            console.log(`[DRAG] Block ${req.params.id.substring(0, 8)} now has order="${contentBlock.order}"`);
         }
         res.json(contentBlock);
     } catch (error) {
@@ -1627,14 +1602,11 @@ app.delete("/api/block-templates/:id", async (req, res) => {
 // AI Audio Generation endpoint
 app.post("/api/ai/generate-audio", async (req, res) => {
     try {
-        console.log("?? AI Generate Audio Request:", req.body);
-
         // Rate limiting check
         const clientId = req.ip || 'unknown';
         const rateLimit = checkRateLimit(clientId);
 
         if (!rateLimit.allowed) {
-            console.log("?? Rate limit exceeded for client:", clientId);
             return res.status(429).json({
                 message: "Rate limit exceeded. Please try again later.",
                 retryAfter: rateLimit.retryAfter
@@ -1643,7 +1615,6 @@ app.post("/api/ai/generate-audio", async (req, res) => {
 
         // Validate request body
         const requestData = aiGenerateTextSchema.parse(req.body);
-        console.log("? Validated audio request data:", requestData);
 
         // Get course context if requested
         let courseContext;
@@ -1666,12 +1637,7 @@ app.post("/api/ai/generate-audio", async (req, res) => {
         }
 
         // Generate audio script
-        console.log("?? Calling generateText for audio script with:", {
-            requestData,
-            courseContext
-        });
         const result = await generateText(requestData, courseContext);
-        console.log("? Generated audio script:", result);
 
         // For now, return the script with a placeholder audio URL
         // In a real implementation, you'd convert the script to audio here
@@ -1683,7 +1649,6 @@ app.post("/api/ai/generate-audio", async (req, res) => {
             model: result.model
         });
     } catch (error) {
-        console.error("?? AI Audio generation error:", error);
         res.status(500).json({
             message: "Failed to generate audio content",
             error: error instanceof Error ? error.message : "Unknown error"
@@ -1694,14 +1659,11 @@ app.post("/api/ai/generate-audio", async (req, res) => {
 // AI Content Generation endpoint
 app.post("/api/ai/generate-text", async (req, res) => {
     try {
-        console.log("?? AI Generate Text Request:", req.body);
-
         // Rate limiting check
         const clientId = req.ip || 'unknown';
         const rateLimit = checkRateLimit(clientId);
 
         if (!rateLimit.allowed) {
-            console.log("?? Rate limit exceeded for client:", clientId);
             return res.status(429).json({
                 message: "Rate limit exceeded. Please try again later.",
                 retryAfter: rateLimit.retryAfter
@@ -1710,7 +1672,6 @@ app.post("/api/ai/generate-text", async (req, res) => {
 
         // Validate request body
         const requestData = aiGenerateTextSchema.parse(req.body);
-        console.log("? Validated request data:", requestData);
 
         // Get course context if requested
         let courseContext;
@@ -1734,12 +1695,7 @@ app.post("/api/ai/generate-text", async (req, res) => {
         }
 
         // Generate content
-        console.log("?? Calling generateText with:", {
-            requestData,
-            courseContext
-        });
         const result = await generateText(requestData, courseContext);
-        console.log("? Generated result:", result);
 
         res.json({
             text: result.text,
@@ -1998,36 +1954,4 @@ app.post("/api/ai/generate-assignment", async (req, res) => {
 
 const httpServer = createServer(app);
 return httpServer;
-}
-
-
-
-async function mockGenerateText(prompt: string, context ? : string): Promise < string > {
-    // Mock text generation with relevant content
-    const templates = [
-        `This section covers the fundamental concepts of ${prompt}. Understanding these principles is crucial for building a strong foundation in the subject.`,
-        `In this module, we'll explore ${prompt} through practical examples and real-world applications that demonstrate key concepts.`,
-        `${prompt} represents an important aspect of this field. Let's examine how it relates to the broader context and why it matters.`
-    ];
-
-    return templates[Math.floor(Math.random() * templates.length)];
-}
-
-// Note: Image prompt generation uses Gemini API (FREE)
-// To generate actual images, use the prompts with:
-// - DALL-E (OpenAI) - ~$0.04/image
-// - Stable Diffusion (local/free) - 100% free
-// - Midjourney - subscription based
-// - Vertex AI Imagen (Google Cloud) - ~$0.04/image
-
-async function mockGenerateImage(prompt: string, style ? : string, seed ? : string): Promise < string > {
-    // Returns placeholder - use the image prompt generation endpoints instead
-    const imageId = seed || Math.floor(Math.random() * 1000);
-    return `https://picsum.photos/seed/${imageId}/800/400`;
-}
-
-async function mockGenerateAudio(text: string, voice ? : string): Promise < string > {
-    // Return a placeholder audio URL that would be replaced with actual AI-generated content
-    const audioId = Math.floor(Math.random() * 1000);
-    return `https://www.soundjay.com/misc/sounds/bell-ringing-${audioId}.wav`;
 }

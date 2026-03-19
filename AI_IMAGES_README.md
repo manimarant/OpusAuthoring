@@ -9,17 +9,18 @@ OpusAuthoring now includes intelligent AI-powered image generation capabilities!
 - **🤖 AI-Powered**: Uses Gemini AI to analyze chapter content and generate appropriate image descriptions
 - **🎯 Context-Aware**: Considers chapter title, module context, and course objectives
 - **🎨 Style Recommendations**: Suggests the best visual style for each chapter
-- **🔗 Flexible Integration**: Works with DALL-E, Midjourney, Stable Diffusion, and more
-- **⚡ Fast Generation**: Typical response time < 2 seconds
+- **🔗 Flux Integration**: Uses Black Forest Labs' Flux model for high-quality image generation
+- **⚡ Fast Generation**: Typical response time < 30 seconds for complete image generation
 - **📚 Educational Focus**: Optimized for learning materials and professional content
 
 ## 🚀 Quick Start
 
 ### 1. Check Prerequisites
 
-Ensure your `.env` file has the Gemini API key configured:
+Ensure your `.env` file has the required API keys configured:
 ```env
-GEMINI_API_KEY=your-api-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
+BFL_API_KEY=your-bfl-api-key-here
 ```
 
 ### 2. Start the Server
@@ -31,6 +32,10 @@ npm run dev
 ### 3. Test the Feature
 
 ```bash
+# Test the complete Flux integration
+node test-flux-integration.js
+
+# Test the original prompt generation only
 node test-image-generation.js
 ```
 
@@ -101,8 +106,8 @@ for (const module of outline.modules) {
       courseContext
     );
     
-    // Use prompt with your image service
-    const imageUrl = await generateImageWithDALLE(prompt.imagePrompt);
+    // Use prompt with Flux image generation
+    const imageUrl = await generateImageWithFlux(prompt.imagePrompt);
     chapter.thumbnail = imageUrl;
   }
 }
@@ -161,11 +166,15 @@ The prompt would generate a professional educational image perfect for the chapt
 
 ## 🔧 Technical Details
 
-### AI Model
-- **Provider**: Google Gemini
-- **Model**: gemini-2.5-flash
-- **Optimized for**: Educational content generation
-- **Response format**: JSON
+### AI Models
+- **Prompt Generation**: Google Gemini (gemini-flash-latest)
+  - **Purpose**: Educational content analysis and prompt generation
+  - **Cost**: FREE
+  - **Response format**: JSON
+- **Image Generation**: Black Forest Labs Flux (flux-pro-1.1)
+  - **Purpose**: High-quality image generation from prompts
+  - **Cost**: PAID (credits-based)
+  - **Response format**: Image URL via polling
 
 ### Rate Limiting
 - 30 requests per minute per client
@@ -178,7 +187,10 @@ The prompt would generate a professional educational image perfect for the chapt
 - Retry logic for transient failures
 
 ### Performance
-- Average response time: < 2 seconds
+- Prompt generation: < 2 seconds
+- Image generation: < 30 seconds (via Flux API)
+- Polling interval: 2 seconds
+- Maximum wait time: 2 minutes
 - Caching support (future enhancement)
 - Batch processing optimization
 
@@ -227,7 +239,42 @@ The AI automatically recommends appropriate styles:
 
 ## 🛠️ Integration with Image Services
 
-### DALL-E (OpenAI)
+### Flux (Black Forest Labs) - **CURRENTLY ACTIVE**
+
+```javascript
+// Submit request to Flux API
+const response = await fetch('https://api.bfl.ai/v1/flux-pro-1.1', {
+  method: 'POST',
+  headers: {
+    'accept': 'application/json',
+    'x-key': process.env.BFL_API_KEY,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    prompt: imagePrompt,
+    aspect_ratio: '16:9' // or '1:1', '9:16'
+  }),
+});
+
+const data = await response.json();
+const pollingUrl = data.polling_url;
+
+// Poll for results
+let result;
+do {
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  const pollResponse = await fetch(pollingUrl, {
+    headers: { 'accept': 'application/json', 'x-key': process.env.BFL_API_KEY }
+  });
+  result = await pollResponse.json();
+} while (result.status !== 'Ready' && result.status !== 'Error');
+
+if (result.status === 'Ready') {
+  return result.result.sample; // Image URL
+}
+```
+
+### DALL-E (OpenAI) - **LEGACY**
 
 ```javascript
 import OpenAI from 'openai';
@@ -290,10 +337,12 @@ Track image generation usage:
 {
   chapterTitle: "Introduction to React",
   promptGenerated: true,
-  generationTime: 1.8,
+  promptGenerationTime: 1.8,
   styleRecommended: "modern flat illustration",
-  imageServiceUsed: "DALL-E",
+  imageServiceUsed: "Flux",
   imageGenerated: true,
+  imageGenerationTime: 24.5,
+  pollingAttempts: 12,
   userSatisfaction: 5
 }
 ```
@@ -316,9 +365,15 @@ Have ideas for improvements? We'd love to hear them!
 - ✅ API endpoint implementation
 - ✅ Test script and documentation
 
-### Planned for 1.1.0
-- 🔜 Direct DALL-E integration
-- 🔜 Batch processing
+### Version 1.1.0 (Current)
+- ✅ Flux integration (replacing DALL-E)
+- ✅ Improved image quality and generation speed
+- ✅ Polling-based async generation
+- ✅ Better error handling and fallbacks
+
+### Planned for 1.2.0
+- 🔜 Multiple Flux model support (dev, schnell, pro)
+- 🔜 Batch processing with queue management
 - 🔜 Image caching
 - 🔜 UI components for chapter image management
 
@@ -333,14 +388,17 @@ A: Make sure to include the `courseId` parameter for better context
 A: Add delays between requests or reduce frequency
 
 **Q: AI service unavailable**
-A: The system includes fallback prompts; check your GEMINI_API_KEY
+A: Check your GEMINI_API_KEY for prompt generation and BFL_API_KEY for image generation
+
+**Q: Flux API errors (401/402/429)**
+A: Verify your BFL_API_KEY is valid and you have sufficient credits
 
 ### Getting Help
 
 1. Check `AI_IMAGE_GENERATION_GUIDE.md` for detailed docs
 2. Run `node test-image-generation.js` to verify setup
 3. Review server logs for error messages
-4. Check that GEMINI_API_KEY is properly configured
+4. Check that GEMINI_API_KEY and BFL_API_KEY are properly configured
 
 ## 🎓 Best Practices
 

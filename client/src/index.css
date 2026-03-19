@@ -379,8 +379,30 @@
 .rise-content [data-testid^="content-assignment-"] [class*="text-sm"],
 .rise-content [data-testid^="content-ai-quiz-"] [class*="text-xs"],
 .rise-content [data-testid^="content-quiz-"] [class*="text-xs"],
-.rise-content [data-testid^="content-assignment-"] [class*="text-xs"] {
+.rise-content [data-testid^="content-assignment-"] [class*="text-xs"],
+.rise-content [data-testid^="interactive-quiz-"] [class*="text-sm"],
+.rise-content [data-testid^="interactive-quiz-"] [class*="text-xs"] {
   font-size: 1rem;
+}
+
+/* Ensure Interactive Quiz components use consistent typography */
+.rise-content [data-testid^="interactive-quiz-"] h3,
+.rise-content [data-testid^="interactive-quiz-"] h4,
+.rise-content [data-testid^="interactive-quiz-"] h5 {
+  font-family: var(--rise-heading-font);
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--rise-text);
+}
+
+.rise-content [data-testid^="interactive-quiz-"] p,
+.rise-content [data-testid^="interactive-quiz-"] li,
+.rise-content [data-testid^="interactive-quiz-"] div,
+.rise-content [data-testid^="interactive-quiz-"] span {
+  font-family: var(--rise-body-font);
+  font-size: 1.0625rem;
+  line-height: 1.8;
+  color: var(--rise-text);
 }
 
 .rise-editor-surface input,

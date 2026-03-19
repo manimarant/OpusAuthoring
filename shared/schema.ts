@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
 
 export const courseThemes = pgTable("course_themes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -25,8 +27,6 @@ export const courseThemes = pgTable("course_themes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

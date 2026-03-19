@@ -174,7 +174,7 @@ export default function RichTextEditor({
         onClick();
       }}
       className={cn(
-        "h-8 w-8 rounded-full p-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+        "h-8 w-8 rounded-full p-0 text-slate-700 hover:bg-slate-200 hover:text-slate-900 font-bold",
         isActive && "bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
       )}
       title={title}

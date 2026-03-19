@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, ChevronDown, BookOpen, FileText, Plus, PanelLeft, Pencil, Copy, Trash2 } from "lucide-react";
+import { ChevronRight, ChevronDown, BookOpen, FileText, Plus, PanelLeft, Pencil, Copy, Trash2, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -8,12 +8,33 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Module, ContentBlock } from "@shared/schema";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCorners,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  CSS,
+} from "@dnd-kit/utilities";
 
 interface CourseNavigationProps {
   courseId: string;
   currentModuleId?: string;
   currentBlockId?: string;
-  onAddLesson?: () => void;
+  onAddModule?: () => void;
+  onAddLesson?: (parentModuleId: string) => void;
   courseTitle?: string;
   onToggleVisibility?: () => void;
 }
@@ -25,9 +46,125 @@ interface ModuleItemProps {
   onToggle: () => void;
   currentModuleId?: string;
   currentBlockId?: string;
+  onAddLesson?: (parentModuleId: string) => void;
+  dragHandleProps?: any;
+  isDragging?: boolean;
 }
 
-function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, currentBlockId }: ModuleItemProps) {
+interface SortableModuleItemProps extends ModuleItemProps {
+  id: string;
+}
+
+interface SortableLessonItemProps {
+  lesson: Module;
+  currentModuleId?: string;
+  isEditing: boolean;
+  editingTitle: string;
+  onEdit: (lesson: Module) => void;
+  onCancelEdit: () => void;
+  onSubmitEdit: (lesson: Module) => void;
+  onTitleChange: (title: string) => void;
+  renderActionsMenu: (module: Module, compact: boolean, active: boolean) => React.ReactNode;
+  id: string;
+}
+
+// Sortable wrapper for modules
+function SortableModuleItem(props: SortableModuleItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <ModuleItem {...props} dragHandleProps={{ ...attributes, ...listeners }} isDragging={isDragging} />
+    </div>
+  );
+}
+
+// Sortable wrapper for lessons
+function SortableLessonItem(props: SortableLessonItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const { lesson, currentModuleId, isEditing, editingTitle, onEdit, onCancelEdit, onSubmitEdit, onTitleChange, renderActionsMenu } = props;
+  const [, setLocation] = useLocation();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  
+  const isChapterActive = currentModuleId === lesson.id;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-2.5 cursor-pointer text-[13px] transition-all duration-150 ${
+        isChapterActive 
+          ? "bg-sky-50 text-sky-700 font-medium" 
+          : "hover:bg-slate-50 text-slate-500 hover:text-slate-900"
+      }`}
+      onClick={() => setLocation(`/module/${lesson.id}/content`)}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity p-0.5 -ml-1"
+      >
+        <GripVertical className="h-3 w-3" />
+      </div>
+      <FileText className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
+      {isEditing ? (
+        <Input
+          ref={inputRef}
+          value={editingTitle}
+          onChange={(e) => onTitleChange(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={() => void onSubmitEdit(lesson)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void onSubmitEdit(lesson);
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancelEdit();
+            }
+          }}
+          className="h-7 min-w-0 flex-1 rounded-md border-slate-200 bg-white px-2 text-[13px] font-medium text-slate-900 focus-visible:ring-slate-300"
+        />
+      ) : (
+        <>
+          <span className="min-w-0 flex-1 truncate course-nav-chapter">{lesson.title}</span>
+          {renderActionsMenu(lesson, true, isChapterActive)}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, currentBlockId, onAddLesson, dragHandleProps, isDragging }: ModuleItemProps) {
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
@@ -307,13 +444,22 @@ function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, cu
     <div className="space-y-2">
       {/* Module Header */}
       <div
-        className={`grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-4 py-3 cursor-pointer transition-all duration-200 ${
+        className={`group grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-4 py-3 cursor-pointer transition-all duration-200 ${
           isActive 
             ? "bg-sky-50 text-sky-700 font-medium shadow-[inset_0_0_0_1px_rgba(14,165,233,0.2)]" 
             : "hover:bg-slate-50 text-slate-700"
-        }`}
+        } ${isDragging ? "opacity-50" : ""}`}
         onClick={handleModuleClick}
       >
+        {dragHandleProps && (
+          <div
+            {...dragHandleProps}
+            className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity p-0.5 -ml-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="h-4 w-4" />
+          </div>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -368,48 +514,62 @@ function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, cu
       >
         {childModules && childModules.length > 0 && (
           <div className="ml-7 space-y-1 pt-1 pb-2">
-            {childModules.map((childModule) => {
-              const isChapterActive = currentModuleId === childModule.id;
-              return (
-                <div
+            <SortableContext
+              items={childModules.map(m => m.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {childModules.map((childModule) => (
+                <SortableLessonItem
                   key={childModule.id}
-                  className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-2.5 cursor-pointer text-[13px] transition-all duration-150 ${
-                    isChapterActive 
-                      ? "bg-sky-50 text-sky-700 font-medium" 
-                      : "hover:bg-slate-50 text-slate-500 hover:text-slate-900"
-                  }`}
-                  onClick={() => setLocation(`/module/${childModule.id}/content`)}
+                  id={childModule.id}
+                  lesson={childModule}
+                  currentModuleId={currentModuleId}
+                  isEditing={editingModuleId === childModule.id}
+                  editingTitle={draftTitle}
+                  onEdit={handleEditModule}
+                  onCancelEdit={cancelEditing}
+                  onSubmitEdit={submitEditing}
+                  onTitleChange={setDraftTitle}
+                  renderActionsMenu={renderActionsMenu}
+                />
+              ))}
+            </SortableContext>
+            {/* Add Lesson Button - Show after existing lessons */}
+            {onAddLesson && (
+              <div className="flex items-end justify-start pt-1 pb-0 ml-5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddLesson(module.id);
+                  }}
+                  className="flex items-center gap-1.5 h-6 px-2 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-50 text-xs"
                 >
-                  <FileText className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
-                  {editingModuleId === childModule.id ? (
-                    <Input
-                      ref={inputRef}
-                      value={draftTitle}
-                      onChange={(e) => setDraftTitle(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      onBlur={() => void submitEditing(childModule)}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void submitEditing(childModule);
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          cancelEditing();
-                        }
-                      }}
-                      className="h-7 min-w-0 flex-1 rounded-md border-slate-200 bg-white px-2 text-[13px] font-medium text-slate-900 focus-visible:ring-slate-300"
-                    />
-                  ) : (
-                    <>
-                      <span className="min-w-0 flex-1 truncate course-nav-chapter">{childModule.title}</span>
-                      {renderActionsMenu(childModule, true, isChapterActive)}
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                  <Plus className="h-3 w-3" />
+                  Add Page
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+        {/* Show plus button for empty modules when expanded */}
+        {(!childModules || childModules.length === 0) && (!sortedBlocks || sortedBlocks.length === 0) && isExpanded && onAddLesson && (
+          <div className="ml-7 flex items-end justify-start pt-1 pb-0">
+            <div className="ml-5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddLesson(module.id);
+                }}
+                className="flex items-center gap-1.5 h-6 px-2 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-50 text-xs"
+              >
+                <Plus className="h-3 w-3" />
+                Add Page
+              </Button>
+            </div>
           </div>
         )}
         {/* Fallback: Show content blocks if no child modules (backward compatibility) */}
@@ -439,8 +599,17 @@ function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, cu
   );
 }
 
-export default function CourseNavigation({ courseId, currentModuleId, currentBlockId, onAddLesson, courseTitle = 'Course Content', onToggleVisibility }: CourseNavigationProps) {
+export default function CourseNavigation({ courseId, currentModuleId, currentBlockId, onAddModule, onAddLesson, courseTitle = 'Course Content', onToggleVisibility }: CourseNavigationProps) {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   const { data: modules } = useQuery<Module[]>({
     queryKey: ["/api/courses", courseId, "modules"],
@@ -457,6 +626,94 @@ export default function CourseNavigation({ courseId, currentModuleId, currentBlo
       }
       return newSet;
     });
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over || active.id === over.id || !modules) {
+      return;
+    }
+
+    const activeModule = modules.find(m => m.id === active.id);
+    const overModule = modules.find(m => m.id === over.id);
+
+    if (!activeModule || !overModule) {
+      return;
+    }
+
+    // Check if both are top-level modules or both are lessons under the same parent
+    const activeIsTopLevel = !activeModule.parentModuleId;
+    const overIsTopLevel = !overModule.parentModuleId;
+    
+    if (activeIsTopLevel && overIsTopLevel) {
+      // Reordering top-level modules
+      const topLevelModules = modules
+        .filter(m => !m.parentModuleId)
+        .sort((a, b) => parseInt(a.order) - parseInt(b.order));
+      
+      const oldIndex = topLevelModules.findIndex(m => m.id === active.id);
+      const newIndex = topLevelModules.findIndex(m => m.id === over.id);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reorderedModules = arrayMove(topLevelModules, oldIndex, newIndex);
+        await reorderTopLevelModules(reorderedModules);
+      }
+    } else if (!activeIsTopLevel && !overIsTopLevel && activeModule.parentModuleId === overModule.parentModuleId) {
+      // Reordering lessons within the same module
+      const lessonsInModule = modules
+        .filter(m => m.parentModuleId === activeModule.parentModuleId)
+        .sort((a, b) => parseInt(a.order) - parseInt(b.order));
+      
+      const oldIndex = lessonsInModule.findIndex(m => m.id === active.id);
+      const newIndex = lessonsInModule.findIndex(m => m.id === over.id);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reorderedLessons = arrayMove(lessonsInModule, oldIndex, newIndex);
+        await reorderLessonsInModule(reorderedLessons, activeModule.parentModuleId!);
+      }
+    }
+  };
+
+  const reorderTopLevelModules = async (reorderedModules: Module[]) => {
+    try {
+      // Update orders on reordered modules
+      await Promise.all(
+        reorderedModules.map((module, index) =>
+          apiRequest("PUT", `/api/modules/${module.id}`, {
+            order: index.toString(),
+          })
+        )
+      );
+      
+      // Invalidate and refetch
+      await queryClient.invalidateQueries({ queryKey: ["/api/courses", courseId, "modules"] });
+    } catch (error) {
+      console.error("Failed to reorder modules:", error);
+    }
+  };
+
+  const reorderLessonsInModule = async (reorderedLessons: Module[], parentModuleId: string) => {
+    try {
+      // Update orders on reordered lessons
+      await Promise.all(
+        reorderedLessons.map((lesson, index) =>
+          apiRequest("PUT", `/api/modules/${lesson.id}`, {
+            order: index.toString(),
+          })
+        )
+      );
+      
+      // Invalidate and refetch
+      await queryClient.invalidateQueries({ queryKey: ["/api/courses", courseId, "modules"] });
+    } catch (error) {
+      console.error("Failed to reorder lessons:", error);
+    }
   };
 
   // Auto-expand the current module's parent (for chapters) or the module itself
@@ -558,11 +815,11 @@ export default function CourseNavigation({ courseId, currentModuleId, currentBlo
             </Button>
           ) : null}
         </div>
-        {onAddLesson && (
+        {onAddModule && (
           <Button
             variant="outline"
             size="sm"
-            onClick={onAddLesson}
+            onClick={onAddModule}
             className="mt-4 w-full justify-start rounded-xl border-dashed border-slate-200 text-slate-600 hover:bg-slate-50"
           >
             <Plus className="mr-2 h-4 w-4" />
@@ -572,29 +829,61 @@ export default function CourseNavigation({ courseId, currentModuleId, currentBlo
       </div>
 
       <ScrollArea className="h-[calc(100vh-129px)] px-3 py-4">
-        <div className="space-y-2 pr-2">
-          {modules && modules.length > 0 ? (
-            modules
-              .filter((m: any) => !m.parentModuleId)
-              .slice()
-              .sort((a, b) => parseInt(a.order) - parseInt(b.order))
-              .map((module) => (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="space-y-2 pr-2">
+            {modules && modules.length > 0 ? (
+              <SortableContext
+                items={modules
+                  .filter((m: any) => !m.parentModuleId)
+                  .sort((a, b) => parseInt(a.order) - parseInt(b.order))
+                  .map(m => m.id)
+                }
+                strategy={verticalListSortingStrategy}
+              >
+                {modules
+                  .filter((m: any) => !m.parentModuleId)
+                  .slice()
+                  .sort((a, b) => parseInt(a.order) - parseInt(b.order))
+                  .map((module) => (
+                    <SortableModuleItem
+                      key={module.id}
+                      id={module.id}
+                      module={module}
+                      modules={modules}
+                      isExpanded={expandedModules.has(module.id)}
+                      onToggle={() => toggleModule(module.id)}
+                      currentModuleId={currentModuleId}
+                      currentBlockId={currentBlockId}
+                      onAddLesson={onAddLesson}
+                    />
+                  ))
+                }
+              </SortableContext>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+                No modules yet
+              </div>
+            )}
+          </div>
+          <DragOverlay>
+            {activeId ? (
+              <div className="opacity-60">
                 <ModuleItem
-                  key={module.id}
-                  module={module}
-                  modules={modules}
-                  isExpanded={expandedModules.has(module.id)}
-                  onToggle={() => toggleModule(module.id)}
-                  currentModuleId={currentModuleId}
-                  currentBlockId={currentBlockId}
+                  module={modules?.find(m => m.id === activeId)!}
+                  modules={modules || []}
+                  isExpanded={false}
+                  onToggle={() => {}}
+                  isDragging
                 />
-              ))
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-              No modules yet
-            </div>
-          )}
-        </div>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </ScrollArea>
     </div>
   );

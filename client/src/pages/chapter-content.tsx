@@ -342,7 +342,8 @@ export default function ModuleContent() {
     },
   });
 
-  const createLessonMutation = useMutation({
+  // Create top-level modules
+  const createModuleMutation = useMutation({
     mutationFn: async () => {
       if (!module) {
         throw new Error("Module not loaded");
@@ -356,9 +357,8 @@ export default function ModuleContent() {
           ? Math.max(...topLevelModules.map((candidate) => parseInt(candidate.order))) + 1
           : 0;
 
-      const response = await apiRequest("POST", "/api/modules", {
-        courseId: module.courseId,
-        title: "New lesson",
+      const response = await apiRequest("POST", `/api/courses/${module.courseId}/modules`, {
+        title: "Untitled Module",
         description: "",
         order: nextOrder.toString(),
         lessonType: "block",
@@ -370,8 +370,50 @@ export default function ModuleContent() {
       await queryClient.invalidateQueries({ queryKey: ["/api/courses", newModule.courseId, "modules"] });
       setLocation(`/module/${newModule.id}/content`);
       toast({
+        title: "Module created",
+        description: "A new module has been added to the course.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to create module",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create lessons under a specific module
+  const createLessonMutation = useMutation({
+    mutationFn: async (parentModuleId: string) => {
+      if (!module) {
+        throw new Error("Module not loaded");
+      }
+
+      const modulesResponse = await apiRequest("GET", `/api/courses/${module.courseId}/modules`);
+      const modules = (await modulesResponse.json()) as Module[];
+      const lessonsInModule = modules.filter((candidate: any) => candidate.parentModuleId === parentModuleId);
+      const nextOrder =
+        lessonsInModule.length > 0
+          ? Math.max(...lessonsInModule.map((candidate) => parseInt(candidate.order))) + 1
+          : 0;
+
+      const response = await apiRequest("POST", `/api/courses/${module.courseId}/modules`, {
+        parentModuleId,
+        title: "Untitled page",
+        description: "",
+        order: nextOrder.toString(),
+        lessonType: "block",
+      });
+
+      return response.json() as Promise<Module>;
+    },
+    onSuccess: async (newLesson) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/courses", newLesson.courseId, "modules"] });
+      setLocation(`/module/${newLesson.id}/content`);
+      toast({
         title: "Lesson created",
-        description: "A new lesson has been added to the outline.",
+        description: "A new lesson has been added to the module.",
       });
     },
     onError: (error) => {
@@ -949,7 +991,8 @@ export default function ModuleContent() {
                 currentModuleId={moduleId}
                 currentBlockId={contentBlockId}
                 courseTitle={course?.title}
-                onAddLesson={() => createLessonMutation.mutate()}
+                onAddModule={() => createModuleMutation.mutate()}
+                onAddLesson={(parentModuleId: string) => createLessonMutation.mutate(parentModuleId)}
                 onToggleVisibility={() => setIsNavVisible(false)}
               />
             </aside>

@@ -582,59 +582,113 @@ function createFallbackOutline(course: { title: string; topic: string; learningO
   };
 }
 
-// DALL-E Image Generation Service
-async function generateImageWithDALLE(
+// Flux Image Generation Service
+async function generateImageWithFlux(
   prompt: string,
   size: "1024x1024" | "1024x1792" | "1792x1024" = "1792x1024"
 ): Promise<string> {
-  const openaiApiKey = process.env.OPENAI_API_KEY;
+  const bflApiKey = process.env.BFL_API_KEY;
   
-  if (!openaiApiKey) {
-    console.warn("⚠️  OPENAI_API_KEY not found. Falling back to placeholder image.");
-    throw new Error("OpenAI API key not configured");
+  if (!bflApiKey) {
+    console.warn("⚠️  BFL_API_KEY not found. Falling back to placeholder image.");
+    throw new Error("Black Forest Labs API key not configured");
   }
   
+  // Convert size to aspect ratio for Flux API
+  const aspectRatio = size === "1024x1792" ? "9:16" : 
+                     size === "1792x1024" ? "16:9" : 
+                     "1:1";
+  
   try {
-    
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
+    // Submit request to Flux API
+    const response = await fetch('https://api.bfl.ai/v1/flux-pro-1.1', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'accept': 'application/json',
+        'x-key': bflApiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "dall-e-3",
         prompt: prompt,
-        n: 1,
-        size: size,
-        quality: "standard",
-        response_format: "url"
+        aspect_ratio: aspectRatio
       }),
     });
     
     if (!response.ok) {
       const errorData = await response.json();
-      console.error("DALL-E API Error:", errorData);
+      console.error("Flux API Error:", errorData);
       
       if (response.status === 401) {
-        throw new Error("Invalid OpenAI API key");
+        throw new Error("Invalid Black Forest Labs API key");
+      } else if (response.status === 402) {
+        throw new Error("Insufficient credits for Flux API");
       } else if (response.status === 429) {
-        throw new Error("Rate limit exceeded for DALL-E");
+        throw new Error("Rate limit exceeded for Flux API");
       } else {
-        throw new Error(`DALL-E API error: ${errorData.error?.message || 'Unknown error'}`);
+        throw new Error(`Flux API error: ${errorData.error?.message || 'Unknown error'}`);
       }
     }
     
     const data = await response.json();
-    const imageUrl = data.data?.[0]?.url;
+    const requestId = data.id;
+    const pollingUrl = data.polling_url;
     
-    if (!imageUrl) {
-      throw new Error("No image URL returned from DALL-E");
+    if (!pollingUrl) {
+      throw new Error("No polling URL returned from Flux API");
     }
-    return imageUrl;
+    
+    // Poll for results
+    console.log(`🔄 Polling Flux API for image generation (ID: ${requestId})...`);
+    let attempts = 0;
+    const maxAttempts = 60; // 2 minutes max wait time
+    
+    while (attempts < maxAttempts) {
+      await sleep(2000); // Wait 2 seconds between polls
+      attempts++;
+      
+      try {
+        const pollResponse = await fetch(pollingUrl, {
+          headers: {
+            'accept': 'application/json',
+            'x-key': bflApiKey,
+          },
+        });
+        
+        if (!pollResponse.ok) {
+          console.error(`Polling failed: ${pollResponse.status} ${pollResponse.statusText}`);
+          continue;
+        }
+        
+        const pollData = await pollResponse.json();
+        
+        if (pollData.status === 'Ready') {
+          const imageUrl = pollData.result?.sample;
+          if (!imageUrl) {
+            throw new Error("No image URL in ready response from Flux API");
+          }
+          console.log(`✅ Flux image generated successfully in ${attempts * 2} seconds`);
+          return imageUrl;
+        } else if (pollData.status === 'Error' || pollData.status === 'Failed') {
+          throw new Error(`Flux generation failed: ${pollData.error?.message || 'Unknown error'}`);
+        }
+        
+        // Status is still 'Pending' or 'Processing', continue polling
+        if (attempts % 5 === 0) {
+          console.log(`⏳ Still generating... (${attempts * 2}s elapsed, status: ${pollData.status})`);
+        }
+        
+      } catch (pollError: any) {
+        console.error(`Polling attempt ${attempts} failed:`, pollError.message);
+        if (attempts >= maxAttempts - 1) {
+          throw pollError;
+        }
+      }
+    }
+    
+    throw new Error(`Flux generation timed out after ${maxAttempts * 2} seconds`);
     
   } catch (error: any) {
-    console.error("❌ DALL-E generation failed:", error.message);
+    console.error("❌ Flux generation failed:", error.message);
     throw error;
   }
 }
@@ -817,8 +871,8 @@ export async function generateCompleteChapterImage(
     );
     
     try {
-      // Step 2: Generate actual image with DALL-E (PAID)
-      const imageUrl = await generateImageWithDALLE(imagePrompt, size);
+      // Step 2: Generate actual image with Flux (PAID)
+      const imageUrl = await generateImageWithFlux(imagePrompt, size);
       
       return {
         imageUrl,
@@ -828,8 +882,8 @@ export async function generateCompleteChapterImage(
         chapterTitle,
         isAIGenerated: true
       };
-    } catch (dalleError: any) {
-      console.warn(`⚠️  DALL-E failed (${dalleError.message}), falling back to contextual placeholder`);
+    } catch (fluxError: any) {
+      console.warn(`⚠️  Flux failed (${fluxError.message}), falling back to contextual placeholder`);
       
       // Fallback: Use contextual placeholder based on chapter title
       const [width, height] = size.split('x');

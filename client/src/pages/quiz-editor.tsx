@@ -12,6 +12,7 @@ import type { ContentBlock } from "@shared/schema";
 import ContentBlockComponent from "@/components/course/content-block";
 import { useLocation } from "wouter";
 import { useDebounce } from "@/hooks/use-debounce";
+import InteractiveQuiz from "@/components/course/interactive-quiz";
 
 interface QuizQuestion {
   question: string;
@@ -376,6 +377,24 @@ export default function QuizEditor() {
               <strong>Instructions:</strong> Enter your quiz title and questions below. Click the radio buttons to mark the correct answer for each question.
             </p>
           </div>
+
+          {/* Preview Section */}
+          {editedContent?.questions && editedContent.questions.length > 0 && editedContent.questions.some((q: any) => q.question && q.options?.some((opt: string) => opt.trim()) && q.correctAnswer) && (
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Preview Quiz</h3>
+              <div className="bg-gray-50 p-6 rounded-lg border">
+                <InteractiveQuiz
+                  content={{
+                    title: editedContent.title || "Quiz Preview",
+                    description: editedContent.description || "",
+                    questions: editedContent.questions.filter((q: any) => q.question && q.options?.some((opt: string) => opt.trim()) && q.correctAnswer)
+                  }}
+                  blockId={contentBlockId}
+                  isPreviewMode={true}
+                />
+              </div>
+            </div>
+          )}
 
           {/* All Questions */}
           <div className="space-y-8">
