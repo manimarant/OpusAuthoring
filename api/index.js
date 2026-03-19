@@ -79557,48 +79557,65 @@ function createRelevantFallbackOutline(course) {
     }
   };
 }
-async function generateImageWithFlux(prompt, size = "1792x1024") {
-  const bflApiKey = process.env.BFL_API_KEY;
-  if (!bflApiKey) {
-    console.warn("\u26A0\uFE0F  BFL_API_KEY not found. Falling back to placeholder image.");
-    throw new Error("Black Forest Labs API key not configured");
+async function generateImageWithGemini(prompt, size = "1792x1024") {
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  if (!geminiApiKey) {
+    console.warn("\u26A0\uFE0F  GEMINI_API_KEY not found. Falling back to placeholder image.");
+    throw new Error("Gemini API key not configured");
   }
-  const aspectRatio = size === "1024x1792" ? "9:16" : size === "1792x1024" ? "16:9" : "1:1";
+  const aspectRatioInstruction = size === "1024x1792" ? "Portrait 9:16 composition." : size === "1792x1024" ? "Landscape 16:9 composition." : "Square 1:1 composition.";
   try {
-    const response = await fetch("https://api.bfl.ai/v1/flux-pro-1.1", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent", {
       method: "POST",
       headers: {
-        "accept": "application/json",
-        "x-key": bflApiKey,
+        "x-goog-api-key": geminiApiKey,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        prompt,
-        aspect_ratio: aspectRatio
+        contents: [
+          {
+            parts: [
+              {
+                text: `${prompt}
+
+${aspectRatioInstruction}
+Output a polished educational image only.`
+              }
+            ]
+          }
+        ]
       })
     });
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Flux API Error:", errorData);
+      const errorData = await response.json().catch(() => null);
+      console.error("Gemini image API error:", errorData);
       if (response.status === 401) {
-        throw new Error("Invalid Black Forest Labs API key");
+        throw new Error("Invalid Gemini API key");
       } else if (response.status === 402) {
-        throw new Error("Insufficient credits for Flux API");
+        throw new Error("Insufficient credits for Gemini image generation");
       } else if (response.status === 429) {
-        throw new Error("Rate limit exceeded for Flux API");
+        throw new Error("Rate limit exceeded for Gemini image generation");
       } else {
-        throw new Error(`Flux API error: ${errorData.error?.message || "Unknown error"}`);
+        throw new Error(`Gemini image API error: ${errorData?.error?.message || "Unknown error"}`);
       }
     }
     const data = await response.json();
-    const requestId = data.id;
-    const pollingUrl = data.polling_url;
-    if (!pollingUrl) {
-      throw new Error("No polling URL returned from Flux API");
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(parts)) {
+      throw new Error("No content returned from Gemini image model");
     }
-    console.log(`\u{1F504} Polling Flux API for image generation (ID: ${requestId})...`);
+    const imagePart = parts.find((part) => part?.inlineData?.data);
+    if (!imagePart?.inlineData?.data) {
+      throw new Error("No inline image data returned from Gemini image model");
+    }
+    const mimeType = imagePart.inlineData.mimeType || "image/png";
+    return `data:${mimeType};base64,${imagePart.inlineData.data}`;
+    const requestId = "";
     let attempts = 0;
-    const maxAttempts = 60;
+    const maxAttempts = 0;
+    const pollingUrl = "";
+    const bflApiKey = "";
+    console.log(`\u{1F504} Polling Flux API for image generation (ID: ${requestId})...`);
     while (attempts < maxAttempts) {
       await sleep(2e3);
       attempts++;
@@ -79634,9 +79651,12 @@ async function generateImageWithFlux(prompt, size = "1792x1024") {
         }
       }
     }
-    throw new Error(`Flux generation timed out after ${maxAttempts * 2} seconds`);
+    throw new Error("Unexpected fallback polling path reached during Gemini image generation");
   } catch (error) {
+    console.error("Gemini image generation failed:", error.message);
+    throw error;
     console.error("\u274C Flux generation failed:", error.message);
+    console.error("Gemini image generation failed:", error.message);
     throw error;
   }
 }
@@ -79749,7 +79769,7 @@ async function generateCompleteChapterImage(chapterTitle, moduleTitle, courseCon
       options
     );
     try {
-      const imageUrl = await generateImageWithFlux(imagePrompt, size);
+      const imageUrl = await generateImageWithGemini(imagePrompt, size);
       return {
         imageUrl,
         imagePrompt,
@@ -79759,7 +79779,10 @@ async function generateCompleteChapterImage(chapterTitle, moduleTitle, courseCon
         isAIGenerated: true
       };
     } catch (fluxError) {
-      console.warn(`\u26A0\uFE0F  Flux failed (${fluxError.message}), falling back to contextual placeholder`);
+      console.warn(`Gemini image generation failed (${fluxError.message}), falling back to contextual placeholder`);
+      if (false) {
+        console.warn(`\u26A0\uFE0F  Flux failed (${fluxError.message}), falling back to contextual placeholder`);
+      }
       const [width, height] = size.split("x");
       const placeholderUrl = generateContextualPlaceholder(chapterTitle, `${width}x${height}`);
       return {
@@ -81621,14 +81644,13 @@ async function registerRoutes(app) {
           message: "Prompt is required"
         });
       }
-      const {
-        imagePrompt,
-        suggestedStyle
-      } = await generateChapterImagePrompt(prompt);
+      const result = await generateCompleteChapterImage(prompt, void 0, void 0, "1792x1024");
       res.json({
-        imagePrompt,
-        suggestedStyle,
-        note: "This is an AI-generated image prompt. Use with image generation services."
+        url: result.imageUrl,
+        imagePrompt: result.imagePrompt,
+        suggestedStyle: result.suggestedStyle,
+        isAIGenerated: result.isAIGenerated,
+        model: "gemini-2.5-flash-image"
       });
     } catch (error) {
       console.error("Failed to generate image:", error);
@@ -81680,7 +81702,7 @@ async function registerRoutes(app) {
         size
       );
       if (result.isAIGenerated) {
-        console.log("? Real DALL-E image generated successfully");
+        console.log("Gemini image generated successfully");
       } else {
         console.log("??  Using contextual placeholder image");
       }

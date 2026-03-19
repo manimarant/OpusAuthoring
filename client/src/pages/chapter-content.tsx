@@ -497,6 +497,68 @@ export default function ModuleContent() {
       return;
     }
 
+    if (type === "ai-image") {
+      try {
+        const chapterTitle = displayChapter?.title || currentModule?.title || "Lesson image";
+        const moduleTitle = displayModule?.title;
+
+        toast({
+          title: "Generating image...",
+          description: `Creating an AI image for ${chapterTitle}.`,
+        });
+
+        const response = await apiRequest("POST", "/api/ai/generate-chapter-image", {
+          chapterTitle,
+          moduleTitle,
+          courseId: course?.id,
+          size: "1792x1024",
+        });
+
+        const data = await response.json();
+
+        if (!data.isAIGenerated || !data.imageUrl) {
+          throw new Error("Gemini image generation returned a fallback image.");
+        }
+
+        const imageContent = {
+          ...content,
+          url: data.imageUrl,
+          alt: chapterTitle,
+          caption: data.visualBrief || chapterTitle,
+          imagePrompt: data.imagePrompt,
+          suggestedStyle: data.suggestedStyle,
+          isGenerated: true,
+        };
+
+        if (insertIndex === orderedBlocks.length) {
+          createContentBlockMutation.mutate({
+            type,
+            content: imageContent,
+            order,
+            metadata: {
+              isAiGenerated: true,
+              successTitle: "Image generated successfully",
+              successDescription: "Created with Gemini 2.5 Flash Image.",
+            },
+          });
+        } else {
+          await insertBlockAt(type, imageContent, insertIndex, {
+            isAiGenerated: true,
+            successTitle: "Image generated successfully",
+            successDescription: "Created with Gemini 2.5 Flash Image.",
+          });
+        }
+        return;
+      } catch (error) {
+        toast({
+          title: "Image generation failed",
+          description: error instanceof Error ? error.message : "Gemini image generation failed.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     if (type === "ai-quiz") {
       try {
         toast({

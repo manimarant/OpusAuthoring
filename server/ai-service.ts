@@ -582,65 +582,78 @@ function createFallbackOutline(course: { title: string; topic: string; learningO
   };
 }
 
-// Flux Image Generation Service
-async function generateImageWithFlux(
+// Gemini native image generation service
+async function generateImageWithGemini(
   prompt: string,
   size: "1024x1024" | "1024x1792" | "1792x1024" = "1792x1024"
 ): Promise<string> {
-  const bflApiKey = process.env.BFL_API_KEY;
+  const geminiApiKey = process.env.GEMINI_API_KEY;
   
-  if (!bflApiKey) {
-    console.warn("⚠️  BFL_API_KEY not found. Falling back to placeholder image.");
-    throw new Error("Black Forest Labs API key not configured");
+  if (!geminiApiKey) {
+    console.warn("⚠️  GEMINI_API_KEY not found. Falling back to placeholder image.");
+    throw new Error("Gemini API key not configured");
   }
   
-  // Convert size to aspect ratio for Flux API
-  const aspectRatio = size === "1024x1792" ? "9:16" : 
-                     size === "1792x1024" ? "16:9" : 
-                     "1:1";
+  const aspectRatioInstruction = size === "1024x1792"
+    ? "Portrait 9:16 composition."
+    : size === "1792x1024"
+      ? "Landscape 16:9 composition."
+      : "Square 1:1 composition.";
   
   try {
-    // Submit request to Flux API
-    const response = await fetch('https://api.bfl.ai/v1/flux-pro-1.1', {
-      method: 'POST',
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent", {
+      method: "POST",
       headers: {
-        'accept': 'application/json',
-        'x-key': bflApiKey,
-        'Content-Type': 'application/json',
+        "x-goog-api-key": geminiApiKey,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        prompt: prompt,
-        aspect_ratio: aspectRatio
+        contents: [
+          {
+            parts: [
+              {
+                text: `${prompt}\n\n${aspectRatioInstruction}\nOutput a polished educational image only.`,
+              },
+            ],
+          },
+        ],
       }),
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Flux API Error:", errorData);
+      const errorData = await response.json().catch(() => null);
+      console.error("Gemini image API error:", errorData);
       
       if (response.status === 401) {
-        throw new Error("Invalid Black Forest Labs API key");
+        throw new Error("Invalid Gemini API key");
       } else if (response.status === 402) {
-        throw new Error("Insufficient credits for Flux API");
+        throw new Error("Insufficient credits for Gemini image generation");
       } else if (response.status === 429) {
-        throw new Error("Rate limit exceeded for Flux API");
+        throw new Error("Rate limit exceeded for Gemini image generation");
       } else {
-        throw new Error(`Flux API error: ${errorData.error?.message || 'Unknown error'}`);
+        throw new Error(`Gemini image API error: ${errorData?.error?.message || 'Unknown error'}`);
       }
     }
     
     const data = await response.json();
-    const requestId = data.id;
-    const pollingUrl = data.polling_url;
-    
-    if (!pollingUrl) {
-      throw new Error("No polling URL returned from Flux API");
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(parts)) {
+      throw new Error("No content returned from Gemini image model");
+    }
+    const imagePart = parts.find((part: any) => part?.inlineData?.data);
+    if (!imagePart?.inlineData?.data) {
+      throw new Error("No inline image data returned from Gemini image model");
     }
     
-    // Poll for results
-    console.log(`🔄 Polling Flux API for image generation (ID: ${requestId})...`);
+    const mimeType = imagePart.inlineData.mimeType || "image/png";
+    return `data:${mimeType};base64,${imagePart.inlineData.data}`;
+    const requestId = "";
     let attempts = 0;
-    const maxAttempts = 60; // 2 minutes max wait time
+    const maxAttempts = 0;
+    const pollingUrl = "";
+    const bflApiKey = "";
+    console.log(`🔄 Polling Flux API for image generation (ID: ${requestId})...`);
+
     
     while (attempts < maxAttempts) {
       await sleep(2000); // Wait 2 seconds between polls
@@ -685,10 +698,13 @@ async function generateImageWithFlux(
       }
     }
     
-    throw new Error(`Flux generation timed out after ${maxAttempts * 2} seconds`);
+    throw new Error("Unexpected fallback polling path reached during Gemini image generation");
     
   } catch (error: any) {
+    console.error("Gemini image generation failed:", error.message);
+    throw error;
     console.error("❌ Flux generation failed:", error.message);
+    console.error("Gemini image generation failed:", error.message);
     throw error;
   }
 }
@@ -746,7 +762,7 @@ function generateContextualPlaceholder(title: string, size: string = "800x400"):
 
 // Generate images for chapters using Gemini's image understanding capabilities
 // Note: Gemini doesn't directly generate images, but we can create image prompts
-// that can be used with image generation services like DALL-E, Stable Diffusion, etc.
+// that can be used to steer Gemini's native image generation toward chapter-specific visuals.
 export async function generateChapterImagePrompt(
   chapterTitle: string,
   moduleTitle?: string,
@@ -845,7 +861,7 @@ Return JSON with keys: "visualBrief", "imagePrompt", and "suggestedStyle"`;
   };
 }
 
-// Complete chapter image generation with DALL-E integration
+// Complete chapter image generation with Gemini 2.5 Flash Image
 export async function generateCompleteChapterImage(
   chapterTitle: string,
   moduleTitle?: string,
@@ -871,8 +887,8 @@ export async function generateCompleteChapterImage(
     );
     
     try {
-      // Step 2: Generate actual image with Flux (PAID)
-      const imageUrl = await generateImageWithFlux(imagePrompt, size);
+      // Step 2: Generate actual image with Gemini
+      const imageUrl = await generateImageWithGemini(imagePrompt, size);
       
       return {
         imageUrl,
@@ -883,8 +899,12 @@ export async function generateCompleteChapterImage(
         isAIGenerated: true
       };
     } catch (fluxError: any) {
+      console.warn(`Gemini image generation failed (${fluxError.message}), falling back to contextual placeholder`);
+      if (false) {
       console.warn(`⚠️  Flux failed (${fluxError.message}), falling back to contextual placeholder`);
       
+      }
+
       // Fallback: Use contextual placeholder based on chapter title
       const [width, height] = size.split('x');
       const placeholderUrl = generateContextualPlaceholder(chapterTitle, `${width}x${height}`);

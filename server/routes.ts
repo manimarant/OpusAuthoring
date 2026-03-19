@@ -1051,14 +1051,13 @@ app.post("/api/ai/generate-image", async (req, res) => {
             });
         }
 
-        const {
-            imagePrompt,
-            suggestedStyle
-        } = await generateChapterImagePrompt(prompt);
+        const result = await generateCompleteChapterImage(prompt, undefined, undefined, "1792x1024");
         res.json({
-            imagePrompt,
-            suggestedStyle,
-            note: "This is an AI-generated image prompt. Use with image generation services."
+            url: result.imageUrl,
+            imagePrompt: result.imagePrompt,
+            suggestedStyle: result.suggestedStyle,
+            isAIGenerated: result.isAIGenerated,
+            model: "gemini-2.5-flash-image"
         });
     } catch (error) {
         console.error("Failed to generate image:", error);
@@ -1068,7 +1067,7 @@ app.post("/api/ai/generate-image", async (req, res) => {
     }
 });
 
-// AI Complete Chapter Image Generation (generates actual images with DALL-E or contextual placeholders)
+// AI Complete Chapter Image Generation (generates actual images with Gemini or contextual placeholders)
 app.post("/api/ai/generate-chapter-image", async (req, res) => {
     try {
         const {
@@ -1122,7 +1121,7 @@ app.post("/api/ai/generate-chapter-image", async (req, res) => {
 
         // Log result for debugging
         if (result.isAIGenerated) {
-            console.log("? Real DALL-E image generated successfully");
+            console.log("Gemini image generated successfully");
         } else {
             console.log("??  Using contextual placeholder image");
         }
