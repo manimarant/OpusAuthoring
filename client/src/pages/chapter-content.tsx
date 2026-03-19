@@ -512,12 +512,13 @@ export default function ModuleContent() {
           moduleTitle,
           courseId: course?.id,
           size: "1792x1024",
+          allowFallback: false,
         });
 
         const data = await response.json();
 
         if (!data.isAIGenerated || !data.imageUrl) {
-          throw new Error("Gemini image generation returned a fallback image.");
+          throw new Error("Hugging Face image generation returned a fallback image.");
         }
 
         const imageContent = {
@@ -538,21 +539,21 @@ export default function ModuleContent() {
             metadata: {
               isAiGenerated: true,
               successTitle: "Image generated successfully",
-              successDescription: "Created with Gemini 2.5 Flash Image.",
+              successDescription: "Created with Hugging Face FLUX.1-schnell.",
             },
           });
         } else {
           await insertBlockAt(type, imageContent, insertIndex, {
             isAiGenerated: true,
             successTitle: "Image generated successfully",
-            successDescription: "Created with Gemini 2.5 Flash Image.",
+            successDescription: "Created with Hugging Face FLUX.1-schnell.",
           });
         }
         return;
       } catch (error) {
         toast({
           title: "Image generation failed",
-          description: error instanceof Error ? error.message : "Gemini image generation failed.",
+          description: error instanceof Error ? error.message : "Hugging Face image generation failed.",
           variant: "destructive",
         });
         return;

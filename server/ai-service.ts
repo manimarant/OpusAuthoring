@@ -582,165 +582,63 @@ function createFallbackOutline(course: { title: string; topic: string; learningO
   };
 }
 
-// Gemini native image generation service
-async function generateImageWithGemini(
+async function generateImageWithHuggingFace(
   prompt: string,
   size: "1024x1024" | "1024x1792" | "1792x1024" = "1792x1024"
 ): Promise<string> {
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  
-  if (!geminiApiKey) {
-    console.warn("⚠️  GEMINI_API_KEY not found. Falling back to placeholder image.");
-    throw new Error("Gemini API key not configured");
+  const huggingFaceToken = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+
+  if (!huggingFaceToken) {
+    console.warn("HUGGINGFACE_API_KEY not found. Falling back to placeholder image.");
+    throw new Error("Hugging Face API key not configured");
   }
-  
-  const aspectRatioInstruction = size === "1024x1792"
-    ? "Portrait 9:16 composition."
-    : size === "1792x1024"
-      ? "Landscape 16:9 composition."
-      : "Square 1:1 composition.";
-  
+
+  const dimensions =
+    size === "1024x1792"
+      ? { width: 768, height: 1344 }
+      : size === "1792x1024"
+        ? { width: 1344, height: 768 }
+        : { width: 1024, height: 1024 };
+
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent", {
+    const response = await fetch("https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell", {
       method: "POST",
       headers: {
-        "x-goog-api-key": geminiApiKey,
+        Authorization: `Bearer ${huggingFaceToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `${prompt}\n\n${aspectRatioInstruction}\nOutput a polished educational image only.`,
-              },
-            ],
-          },
-        ],
+        inputs: prompt,
+        parameters: {
+          width: dimensions.width,
+          height: dimensions.height,
+          num_inference_steps: 4,
+          guidance_scale: 3.5,
+        },
       }),
     });
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      console.error("Gemini image API error:", errorData);
-      
-      if (response.status === 401) {
-        throw new Error("Invalid Gemini API key");
-      } else if (response.status === 402) {
-        throw new Error("Insufficient credits for Gemini image generation");
-      } else if (response.status === 429) {
-        throw new Error("Rate limit exceeded for Gemini image generation");
-      } else {
-        throw new Error(`Gemini image API error: ${errorData?.error?.message || 'Unknown error'}`);
-      }
-    }
-    
-    const data = await response.json();
-    const parts = data?.candidates?.[0]?.content?.parts;
-    if (!Array.isArray(parts)) {
-      throw new Error("No content returned from Gemini image model");
-    }
-    const imagePart = parts.find((part: any) => part?.inlineData?.data);
-    if (!imagePart?.inlineData?.data) {
-      throw new Error("No inline image data returned from Gemini image model");
-    }
-    
-    const mimeType = imagePart.inlineData.mimeType || "image/png";
-    return `data:${mimeType};base64,${imagePart.inlineData.data}`;
-    const requestId = "";
-    let attempts = 0;
-    const maxAttempts = 0;
-    const pollingUrl = "";
-    const bflApiKey = "";
-    console.log(`🔄 Polling Flux API for image generation (ID: ${requestId})...`);
 
-    
-    while (attempts < maxAttempts) {
-      await sleep(2000); // Wait 2 seconds between polls
-      attempts++;
-      
-      try {
-        const pollResponse = await fetch(pollingUrl, {
-          headers: {
-            'accept': 'application/json',
-            'x-key': bflApiKey,
-          },
-        });
-        
-        if (!pollResponse.ok) {
-          console.error(`Polling failed: ${pollResponse.status} ${pollResponse.statusText}`);
-          continue;
-        }
-        
-        const pollData = await pollResponse.json();
-        
-        if (pollData.status === 'Ready') {
-          const imageUrl = pollData.result?.sample;
-          if (!imageUrl) {
-            throw new Error("No image URL in ready response from Flux API");
-          }
-          console.log(`✅ Flux image generated successfully in ${attempts * 2} seconds`);
-          return imageUrl;
-        } else if (pollData.status === 'Error' || pollData.status === 'Failed') {
-          throw new Error(`Flux generation failed: ${pollData.error?.message || 'Unknown error'}`);
-        }
-        
-        // Status is still 'Pending' or 'Processing', continue polling
-        if (attempts % 5 === 0) {
-          console.log(`⏳ Still generating... (${attempts * 2}s elapsed, status: ${pollData.status})`);
-        }
-        
-      } catch (pollError: any) {
-        console.error(`Polling attempt ${attempts} failed:`, pollError.message);
-        if (attempts >= maxAttempts - 1) {
-          throw pollError;
-        }
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error("Hugging Face image API error:", errorText);
+
+      if (response.status === 401) {
+        throw new Error("Invalid Hugging Face API key");
+      } else if (response.status === 402) {
+        throw new Error("Insufficient credits for Hugging Face image generation");
+      } else if (response.status === 429) {
+        throw new Error("Rate limit exceeded for Hugging Face image generation");
+      } else {
+        throw new Error(`Hugging Face image API error: ${response.status}`);
       }
     }
-    
-    throw new Error("Unexpected fallback polling path reached during Gemini image generation");
-    
+
+    const imageBytes = Buffer.from(await response.arrayBuffer());
+    return `data:image/png;base64,${imageBytes.toString("base64")}`;
   } catch (error: any) {
-    console.error("Gemini image generation failed:", error.message);
-    throw error;
-    console.error("❌ Flux generation failed:", error.message);
-    console.error("Gemini image generation failed:", error.message);
+    console.error("Hugging Face image generation failed:", error.message);
     throw error;
   }
-}
-
-function createInlinePlaceholderSvg(title: string, size: string = "800x400"): string {
-  const [widthRaw, heightRaw] = size.split("x");
-  const width = Math.max(Number(widthRaw) || 800, 320);
-  const height = Math.max(Number(heightRaw) || 400, 180);
-  const safeTitle = title
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-      <defs>
-        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#e2e8f0" />
-          <stop offset="100%" stop-color="#cbd5e1" />
-        </linearGradient>
-      </defs>
-      <rect width="${width}" height="${height}" rx="24" fill="url(#bg)" />
-      <rect x="24" y="24" width="${width - 48}" height="${height - 48}" rx="18" fill="#ffffff" fill-opacity="0.72" />
-      <circle cx="${Math.round(width * 0.24)}" cy="${Math.round(height * 0.32)}" r="${Math.round(Math.min(width, height) * 0.08)}" fill="#93c5fd" fill-opacity="0.95" />
-      <circle cx="${Math.round(width * 0.72)}" cy="${Math.round(height * 0.38)}" r="${Math.round(Math.min(width, height) * 0.11)}" fill="#86efac" fill-opacity="0.9" />
-      <circle cx="${Math.round(width * 0.48)}" cy="${Math.round(height * 0.66)}" r="${Math.round(Math.min(width, height) * 0.14)}" fill="#f9a8d4" fill-opacity="0.88" />
-      <rect x="${Math.round(width * 0.18)}" y="${Math.round(height * 0.7)}" width="${Math.round(width * 0.28)}" height="${Math.round(height * 0.05)}" rx="999" fill="#0f172a" fill-opacity="0.16" />
-      <rect x="${Math.round(width * 0.52)}" y="${Math.round(height * 0.7)}" width="${Math.round(width * 0.18)}" height="${Math.round(height * 0.05)}" rx="999" fill="#0f172a" fill-opacity="0.12" />
-      <text x="50%" y="87%" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.max(Math.min(width / 34, 20), 12)}" fill="#475569">
-        ${safeTitle.slice(0, 72)}
-      </text>
-    </svg>
-  `.replace(/\s{2,}/g, " ").trim();
-
-  return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
 }
 
 // Generate contextual placeholder images based on title
@@ -760,14 +658,12 @@ function generateContextualPlaceholder(title: string, size: string = "800x400"):
   return `https://picsum.photos/seed/${seed}/${width}/${height}`;
 }
 
-// Generate images for chapters using Gemini's image understanding capabilities
-// Note: Gemini doesn't directly generate images, but we can create image prompts
-// that can be used to steer Gemini's native image generation toward chapter-specific visuals.
+// Generate chapter-specific image prompts using Gemini text generation.
 export async function generateChapterImagePrompt(
   chapterTitle: string,
   moduleTitle?: string,
   courseContext?: { title: string; topic: string; objectives: string },
-  options?: { sourceText?: string; preferredStyle?: string }
+  options?: { sourceText?: string; preferredStyle?: string; allowFallback?: boolean }
 ): Promise<{ imagePrompt: string; suggestedStyle: string; visualBrief: string }> {
   const systemPrompt = `You are an expert instructional designer and visual director for e-learning.
 Create a chapter-specific visual brief and then a production-ready image prompt.
@@ -836,7 +732,7 @@ Return JSON with keys: "visualBrief", "imagePrompt", and "suggestedStyle"`;
         visualBrief: parsed.visualBrief || `A chapter-specific educational visual for ${chapterTitle}.`,
       };
     } catch (error: any) {
-      console.error(`❌ Image prompt generation attempt ${attempt} failed:`, {
+      console.error(`Image prompt generation attempt ${attempt} failed:`, {
         message: error.message,
         status: error.status,
         statusText: error.statusText
@@ -852,8 +748,7 @@ Return JSON with keys: "visualBrief", "imagePrompt", and "suggestedStyle"`;
     }
   }
 
-  console.warn('AI image prompt generation failed after all retries. Using fallback prompt.');
-  // Fallback: create a basic prompt
+  console.warn("AI image prompt generation failed after all retries. Using fallback prompt.");
   return {
     imagePrompt: `Professional educational illustration representing ${chapterTitle}${moduleTitle ? ` from ${moduleTitle}` : ''}, clean and modern style, suitable for e-learning`,
     suggestedStyle: options?.preferredStyle || "modern flat illustration",
@@ -861,13 +756,13 @@ Return JSON with keys: "visualBrief", "imagePrompt", and "suggestedStyle"`;
   };
 }
 
-// Complete chapter image generation with Gemini 2.5 Flash Image
+// Complete chapter image generation with Hugging Face FLUX.1-schnell
 export async function generateCompleteChapterImage(
   chapterTitle: string,
   moduleTitle?: string,
   courseContext?: { title: string; topic: string; objectives: string },
   size: "1024x1024" | "1024x1792" | "1792x1024" = "1792x1024",
-  options?: { sourceText?: string; preferredStyle?: string }
+  options?: { sourceText?: string; preferredStyle?: string; allowFallback?: boolean }
 ): Promise<{
   imageUrl: string;
   imagePrompt: string;
@@ -876,9 +771,10 @@ export async function generateCompleteChapterImage(
   chapterTitle: string;
   isAIGenerated: boolean;
 }> {
+  const allowFallback = options?.allowFallback ?? true;
   
   try {
-    // Step 1: Generate the image prompt using Gemini (FREE)
+    // Step 1: Generate the image prompt using Gemini
     const { imagePrompt, suggestedStyle, visualBrief } = await generateChapterImagePrompt(
       chapterTitle,
       moduleTitle,
@@ -887,8 +783,8 @@ export async function generateCompleteChapterImage(
     );
     
     try {
-      // Step 2: Generate actual image with Gemini
-      const imageUrl = await generateImageWithGemini(imagePrompt, size);
+      // Step 2: Generate actual image with Hugging Face FLUX.1-schnell
+      const imageUrl = await generateImageWithHuggingFace(imagePrompt, size);
       
       return {
         imageUrl,
@@ -898,15 +794,12 @@ export async function generateCompleteChapterImage(
         chapterTitle,
         isAIGenerated: true
       };
-    } catch (fluxError: any) {
-      console.warn(`Gemini image generation failed (${fluxError.message}), falling back to contextual placeholder`);
-      if (false) {
-      console.warn(`⚠️  Flux failed (${fluxError.message}), falling back to contextual placeholder`);
-      
+    } catch (imageError: any) {
+      if (!allowFallback) {
+        throw imageError;
       }
-
-      // Fallback: Use contextual placeholder based on chapter title
-      const [width, height] = size.split('x');
+      console.warn(`Hugging Face image generation failed (${imageError.message}), falling back to contextual placeholder`);
+      const [width, height] = size.split("x");
       const placeholderUrl = generateContextualPlaceholder(chapterTitle, `${width}x${height}`);
       
       return {
@@ -919,10 +812,12 @@ export async function generateCompleteChapterImage(
       };
     }
   } catch (promptError: any) {
-    console.warn(`⚠️  Prompt generation failed (${promptError.message}), using basic fallback`);
+    if (!allowFallback) {
+      throw promptError;
+    }
+    console.warn(`Prompt generation failed (${promptError.message}), using basic fallback`);
     
-    // Complete fallback: basic prompt and contextual placeholder
-    const [width, height] = size.split('x');
+    const [width, height] = size.split("x");
     const placeholderUrl = generateContextualPlaceholder(chapterTitle, `${width}x${height}`);
     
     return {
@@ -1643,4 +1538,5 @@ export async function generateCompleteVideo(
     throw error;
   }
 }
+
 

@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
+import fs from "fs/promises";
 import multer from "multer";
 import path from "path";
 import { storage } from "./storage";
@@ -25,6 +26,7 @@ import { z } from "zod";
 import { generateText, generateQuiz, generateAssignment, checkRateLimit, generateCourseOutline, generateChapterImagePrompt, generateImagePromptsForOutline, generateCompleteChapterImage, generateVideoWithTavus, generateVideoPrompt, generateCompleteVideo } from "./ai-service";
 import { selectStockImage, refreshStockImageCatalog, getStockImageCatalog } from "./stock-images";
 import { createScormPackage } from "./scorm-service";
+import { getUploadsDir } from "./app";
 
 const upload = multer({
   dest: 'uploads/',
@@ -56,7 +58,27 @@ const mediaUpload = multer({
   }
 });
 
-import { getUploadsDir } from "./app";
+async function persistGeneratedImage(imageUrl: string): Promise<string> {
+  if (!imageUrl.startsWith("data:image/")) {
+    return imageUrl;
+  }
+
+  const match = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) {
+    return imageUrl;
+  }
+
+  const [, mimeType, base64Data] = match;
+  const extension = mimeType.split("/")[1] || "png";
+  const uploadsDir = path.join(getUploadsDir(), "generated-images");
+  await fs.mkdir(uploadsDir, { recursive: true });
+
+  const filename = `generated-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+  const filepath = path.join(uploadsDir, filename);
+  await fs.writeFile(filepath, Buffer.from(base64Data, "base64"));
+
+  return `/api/uploads/generated-images/${filename}`;
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Serve uploaded files statically
@@ -514,6 +536,50 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
             moduleId: req.params.moduleId
         });
 
+        if (contentBlockData.type === "ai-image") {
+            const content = (contentBlockData.content || {}) as Record<string, any>;
+            const currentUrl = String(content.url || "");
+            const shouldGenerateImage = !currentUrl || currentUrl.includes("picsum.photos");
+
+            if (shouldGenerateImage) {
+                const module = await storage.getModule(req.params.moduleId);
+                if (module) {
+                    let courseContext: { title: string; topic: string; objectives: string } | undefined;
+                    try {
+                        const course = await storage.getCourse(module.courseId);
+                        if (course) {
+                            courseContext = {
+                                title: course.title,
+                                topic: course.topic,
+                                objectives: course.learningObjectives,
+                            };
+                        }
+                    } catch (contextError) {
+                        console.warn("Failed to fetch course context for ai-image block:", contextError);
+                    }
+
+                    const generatedImage = await generateCompleteChapterImage(
+                        module.title,
+                        undefined,
+                        courseContext,
+                        "1792x1024",
+                        { allowFallback: false }
+                    );
+
+                    const persistedImageUrl = await persistGeneratedImage(generatedImage.imageUrl);
+                    contentBlockData.content = {
+                        ...content,
+                        url: persistedImageUrl,
+                        alt: content.alt || module.title,
+                        caption: content.caption || generatedImage.visualBrief || module.title,
+                        imagePrompt: generatedImage.imagePrompt,
+                        suggestedStyle: generatedImage.suggestedStyle,
+                        isGenerated: true,
+                    };
+                }
+            }
+        }
+
         // If it's an ai-text block, generate AI content automatically
         if (contentBlockData.type === 'ai-text') {
             const module = await storage.getModule(req.params.moduleId);
@@ -611,26 +677,6 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
                         };
                     }
                 }
-            }
-        }
-
-        // If it's an ai-image block, generate image URL
-        if (contentBlockData.type === 'ai-image') {
-            try {
-                const prompt = (contentBlockData as any).content?.prompt || "Illustration related to the lesson";
-                // Generate placeholder image URL based on prompt
-                const imageId = Math.abs(prompt.split('').reduce((a: number, b: string) => {
-                    a = ((a << 5) - a) + b.charCodeAt(0);
-                    return a & a;
-                }, 0));
-                const url = `https://picsum.photos/seed/${imageId}/800/400`;
-                contentBlockData.content = {
-                    url,
-                    caption: (contentBlockData as any).content?.caption || "",
-                    alt: (contentBlockData as any).content?.alt || ""
-                };
-            } catch {
-                contentBlockData.content = contentBlockData.content || {};
             }
         }
 
@@ -1037,7 +1083,7 @@ app.delete("/api/reference-files/:id", async (req, res) => {
 
 // AI Content Generation (mock endpoints removed - using real OpenAI integration)
 
-// AI Image Generation endpoint (uses Gemini API)
+// AI Image Generation endpoint
 app.post("/api/ai/generate-image", async (req, res) => {
     try {
         const {
@@ -1057,7 +1103,7 @@ app.post("/api/ai/generate-image", async (req, res) => {
             imagePrompt: result.imagePrompt,
             suggestedStyle: result.suggestedStyle,
             isAIGenerated: result.isAIGenerated,
-            model: "gemini-2.5-flash-image"
+            model: "black-forest-labs/FLUX.1-schnell"
         });
     } catch (error) {
         console.error("Failed to generate image:", error);
@@ -1067,14 +1113,15 @@ app.post("/api/ai/generate-image", async (req, res) => {
     }
 });
 
-// AI Complete Chapter Image Generation (generates actual images with Gemini or contextual placeholders)
+// AI Complete Chapter Image Generation
 app.post("/api/ai/generate-chapter-image", async (req, res) => {
     try {
         const {
             chapterTitle,
             moduleTitle,
             courseId,
-            size = "1024x1024"
+            size = "1024x1024",
+            allowFallback = true
         } = req.body;
 
         if (!chapterTitle || typeof chapterTitle !== "string") {
@@ -1108,25 +1155,29 @@ app.post("/api/ai/generate-chapter-image", async (req, res) => {
             }
         }
 
-        console.log(`?? Generating image for chapter: "${chapterTitle}"`);
-        console.log(`?? Requested size: ${size}`);
+        console.log(`Generating image for chapter: "${chapterTitle}"`);
+        console.log(`Requested size: ${size}`);
         
-        // Generate complete image (prompt + actual image or contextual placeholder)
         const result = await generateCompleteChapterImage(
             chapterTitle,
             moduleTitle,
             courseContext,
-            size as "1024x1024" | "1024x1792" | "1792x1024"
+            size as "1024x1024" | "1024x1792" | "1792x1024",
+            { allowFallback }
         );
 
-        // Log result for debugging
+        const persistedImageUrl = await persistGeneratedImage(result.imageUrl);
+
         if (result.isAIGenerated) {
-            console.log("Gemini image generated successfully");
-        } else {
-            console.log("??  Using contextual placeholder image");
+            console.log("Hugging Face FLUX.1-schnell image generated successfully");
+        } else if (allowFallback) {
+            console.log("Using contextual placeholder image");
         }
 
-        res.json(result);
+        res.json({
+            ...result,
+            imageUrl: persistedImageUrl
+        });
     } catch (error) {
         console.error("Failed to generate chapter image:", error);
         res.status(500).json({
