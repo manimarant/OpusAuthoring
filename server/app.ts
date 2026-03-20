@@ -39,19 +39,21 @@ export function createApp() {
   ensureUploadsDir();
 
   const app = express();
+  const jsonParser = express.json({ limit: "15mb" });
+  const urlencodedParser = express.urlencoded({ extended: false, limit: "15mb" });
 
   app.use((req, res, next) => {
     if (req.path.includes("/upload") || req.path.includes("/media-upload")) {
       return next();
     }
-    express.json()(req, res, next);
+    jsonParser(req, res, next);
   });
 
   app.use((req, res, next) => {
     if (req.path.includes("/upload") || req.path.includes("/media-upload")) {
       return next();
     }
-    express.urlencoded({ extended: false })(req, res, next);
+    urlencodedParser(req, res, next);
   });
 
   app.use((req, res, next) => {

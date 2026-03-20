@@ -305,7 +305,7 @@ export default function ContentBlockMenu({ onAddContent, onClose, mode = "defaul
       case "image":
         return { url: "", alt: "", caption: "" };
       case "gallery":
-        return { images: [], layout: "grid" };
+        return { layout: "", images: [] };
       case "ai-video":
         return { title: "", url: "#", duration: "", provider: "tavus" };
       case "ai-audio":
@@ -314,7 +314,7 @@ export default function ContentBlockMenu({ onAddContent, onClose, mode = "defaul
       case "video":
         return { title: "", url: "#", duration: "" };
       case "accordion":
-        return { sections: [] };
+        return { title: "", items: [] };
       case "timeline":
         return { events: [], orientation: "vertical" };
       case "labeled-graphic":
@@ -322,11 +322,11 @@ export default function ContentBlockMenu({ onAddContent, onClose, mode = "defaul
       case "scenario":
         return { title: "", description: "", choices: [] };
       case "flashcards":
-        return { cards: [] };
+        return { title: "", cards: [] };
       case "sorting-activity":
         return { items: [], categories: [] };
       case "process-flow":
-        return { steps: [] };
+        return { title: "", steps: [] };
       case "quiz":
         return { 
           title: "", 
@@ -335,9 +335,9 @@ export default function ContentBlockMenu({ onAddContent, onClose, mode = "defaul
           isGenerated: false 
         };
       case "continue":
-        return { text: "Continue", buttonStyle: "primary" };
+        return { text: "Continue", url: "" };
       case "list":
-        return { items: [], style: "bullet" };
+        return { title: "", items: [], type: "unordered" };
       default:
         return {};
     }

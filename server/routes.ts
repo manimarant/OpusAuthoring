@@ -80,6 +80,81 @@ async function persistGeneratedImage(imageUrl: string): Promise<string> {
   return `/api/uploads/generated-images/${filename}`;
 }
 
+async function persistGeneratedAudio(audioBuffer: Buffer, extension = "mp3"): Promise<string> {
+  const uploadsDir = path.join(getUploadsDir(), "generated-audio");
+  await fs.mkdir(uploadsDir, { recursive: true });
+
+  const filename = `generated-audio-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+  const filepath = path.join(uploadsDir, filename);
+  await fs.writeFile(filepath, audioBuffer);
+
+  return `/api/uploads/generated-audio/${filename}`;
+}
+
+function stripHtmlTags(value: string): string {
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function clampNarrationToFifteenSeconds(value: string): string {
+  const maxWordCount = 34;
+  return stripHtmlTags(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, maxWordCount)
+    .join(" ")
+    .trim();
+}
+
+async function generateElevenLabsAudio(text: string): Promise<{ audioUrl: string; duration: string; voiceId: string; modelId: string; script: string }> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    throw new Error("ElevenLabs API key not configured");
+  }
+
+  const voiceId = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb";
+  const modelId = process.env.ELEVENLABS_MODEL_ID || "eleven_flash_v2_5";
+  const script = clampNarrationToFifteenSeconds(text);
+
+  if (!script) {
+    throw new Error("Generated audio script was empty");
+  }
+
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
+    method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "audio/mpeg",
+    },
+    body: JSON.stringify({
+      text: script,
+      model_id: modelId,
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.75,
+        style: 0.15,
+        use_speaker_boost: true,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ElevenLabs API error: ${response.status} ${errorText}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  const audioUrl = await persistGeneratedAudio(audioBuffer, "mp3");
+
+  return {
+    audioUrl,
+    duration: "0:15",
+    voiceId,
+    modelId,
+    script,
+  };
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Serve uploaded files statically
   const uploadsPath = getUploadsDir();
@@ -625,56 +700,62 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
 
         // If it's an ai-audio block, generate AI audio content automatically
         if (contentBlockData.type === 'ai-audio') {
-            const module = await storage.getModule(req.params.moduleId);
-            if (module) {
-                const course = await storage.getCourse(module.courseId);
-                if (course) {
-                    try {
-                        // Generate audio script using AI
-                        const aiRequest = {
-                            moduleId: req.params.moduleId,
-                            provider: 'gemini' as const,
-                            type: 'explanation' as const,
-                            prompt: `Create a concise audio script (2-3 minutes) for a lesson module titled "${module.title}". This should be engaging narration that explains key concepts in a conversational tone. Include natural pauses and transitions.`,
-                            length: 'medium' as const,
-                            style: {
-                                tone: 'friendly' as const,
-                                readingLevel: 'intermediate' as const
-                            },
-                            includeCourseContext: false
-                        };
+            const audioContent = contentBlockData.content && typeof contentBlockData.content === "object" && !Array.isArray(contentBlockData.content)
+                ? contentBlockData.content as { url?: string; script?: string }
+                : undefined;
+            const hasProvidedAudio = Boolean(audioContent?.url && !String(audioContent.url).startsWith("#") && audioContent?.script);
 
-                        const courseContext = {
-                            title: course.title,
-                            topic: course.topic,
-                            objectives: course.learningObjectives
-                        };
+            if (!hasProvidedAudio) {
+                const module = await storage.getModule(req.params.moduleId);
+                if (module) {
+                    const course = await storage.getCourse(module.courseId);
+                    if (course) {
+                        try {
+                            const chapterSummary = stripHtmlTags(String(module.description || ""));
+                            const aiRequest = {
+                                moduleId: req.params.moduleId,
+                                provider: 'gemini' as const,
+                                type: 'explanation' as const,
+                                prompt: `Write a spoken lesson narration for the chapter titled "${module.title}". ${chapterSummary ? `Chapter summary: ${chapterSummary}. ` : ""}Keep it under 35 words so the audio stays within 15 seconds. Use a concise educational tone and focus only on the most important takeaway.`,
+                                length: 'short' as const,
+                                style: {
+                                    tone: 'friendly' as const,
+                                    readingLevel: 'intermediate' as const
+                                },
+                                includeCourseContext: true
+                            };
 
-                        // Generate audio script
-                        const aiResult = await generateText(aiRequest, courseContext);
+                            const courseContext = {
+                                title: course.title,
+                                topic: course.topic,
+                                objectives: course.learningObjectives
+                            };
 
-                        // For now, we'll store the script and a placeholder audio URL
-                        // In a real implementation, you'd convert the text to speech here
-                        contentBlockData.content = {
-                            title: `Audio: ${module.title}`,
-                            description: "AI-generated audio narration",
-                            script: aiResult.text,
-                            url: `#audio-placeholder-${Date.now()}`, // Placeholder URL
-                            duration: "2:30", // Estimated duration
-                            isGenerated: true
-                        };
+                            const aiResult = await generateText(aiRequest, courseContext);
+                            const generatedAudio = await generateElevenLabsAudio(aiResult.text);
+                            contentBlockData.content = {
+                                title: `Audio: ${module.title}`,
+                                description: "AI-generated audio narration",
+                                script: generatedAudio.script,
+                                url: generatedAudio.audioUrl,
+                                duration: generatedAudio.duration,
+                                voiceId: generatedAudio.voiceId,
+                                modelId: generatedAudio.modelId,
+                                isGenerated: true
+                            };
 
-                    } catch (aiError) {
-                        console.error('Failed to generate AI audio content:', aiError);
-                        // Continue with default content if AI generation fails
-                        contentBlockData.content = {
-                            title: "AI Generated Audio",
-                            description: "Audio narration generated by AI",
-                            script: "",
-                            url: "#",
-                            duration: "",
-                            isGenerated: false
-                        };
+                        } catch (aiError) {
+                            console.error('Failed to generate AI audio content:', aiError);
+                            // Continue with default content if AI generation fails
+                            contentBlockData.content = {
+                                title: "AI Generated Audio",
+                                description: "Audio narration generation failed",
+                                script: "",
+                                url: "#",
+                                duration: "",
+                                isGenerated: false
+                            };
+                        }
                     }
                 }
             }
@@ -1687,17 +1768,16 @@ app.post("/api/ai/generate-audio", async (req, res) => {
             }
         }
 
-        // Generate audio script
         const result = await generateText(requestData, courseContext);
-
-        // For now, return the script with a placeholder audio URL
-        // In a real implementation, you'd convert the script to audio here
+        const generatedAudio = await generateElevenLabsAudio(result.text);
         res.json({
-            script: result.text,
-            audioUrl: `#audio-placeholder-${Date.now()}`,
-            duration: "2:30", // Estimated duration
+            script: generatedAudio.script,
+            audioUrl: generatedAudio.audioUrl,
+            duration: generatedAudio.duration,
+            voiceId: generatedAudio.voiceId,
             provider: result.provider,
-            model: result.model
+            model: result.model,
+            audioModel: generatedAudio.modelId,
         });
     } catch (error) {
         res.status(500).json({

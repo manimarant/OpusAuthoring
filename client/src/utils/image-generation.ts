@@ -158,8 +158,8 @@ export function getImageDisplayProps(
   isPlaceholder: boolean;
   caption?: string;
 } {
-  const url = content.url || generateContextualPlaceholderUrl(fallbackTitle);
-  const isPlaceholder = content.isPlaceholder || isPlaceholderImage(url);
+  const url = typeof content.url === "string" ? content.url.trim() : "";
+  const isPlaceholder = !url || content.isPlaceholder || isPlaceholderImage(url);
   
   return {
     url,

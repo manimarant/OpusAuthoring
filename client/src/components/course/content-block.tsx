@@ -1,5 +1,5 @@
 import { Component, type ReactNode, useEffect, useRef, useState } from "react";
-import { GripVertical, Sparkles, Trash2, Copy, MoveVertical, Play, Pause, Edit, ChevronDown, RotateCw, Check, X } from "lucide-react";
+import { GripVertical, Sparkles, Trash2, Copy, MoveVertical, Play, Pause, Edit, ChevronDown, ChevronLeft, ChevronRight, RotateCw, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SanitizedHTML } from "@/components/ui/sanitized-html";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import { useDebounce } from "../../hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 import { useDrag, useDrop } from "react-dnd";
 import type { Identifier } from "dnd-core";
-import { getImageDisplayProps, generateContextualPlaceholderUrl } from "@/utils/image-generation";
+import { getImageDisplayProps } from "@/utils/image-generation";
 
 interface ContentBlockComponentProps {
   contentBlock: ContentBlock;
@@ -83,6 +83,9 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
   const [expandedAccordionItems, setExpandedAccordionItems] = useState<Record<number, boolean>>({});
   const [flippedFlashcards, setFlippedFlashcards] = useState<Record<number, boolean>>({});
   const [activeTimelineEvent, setActiveTimelineEvent] = useState(0);
+  const [activeGraphicLabel, setActiveGraphicLabel] = useState(0);
+  const [activeGalleryCarouselIndex, setActiveGalleryCarouselIndex] = useState(0);
+  const [selectedScenarioChoice, setSelectedScenarioChoice] = useState<number | null>(null);
   const [sortingAssignments, setSortingAssignments] = useState<Record<number, string>>({});
   const [draggedSortingIndex, setDraggedSortingIndex] = useState<number | null>(null);
   const [selectedSortingIndex, setSelectedSortingIndex] = useState<number | null>(null);
@@ -97,6 +100,7 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
   const dragHandleRef = useRef<HTMLDivElement>(null);
   const lastSavedContentRef = useRef<string>('');
   const latestEditedContentRef = useRef<Record<string, any>>(editedContent);
+  const saveQueueRef = useRef(Promise.resolve());
   
   // Audio playback state
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -105,6 +109,7 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
     currentTime: number;
     duration: number;
   }>({ isPlaying: false, currentTime: 0, duration: 0 });
+  const [uploadingImageKey, setUploadingImageKey] = useState<string | null>(null);
   // Drag and drop setup
   const [{ handlerId }, drop] = useDrop<
     { id: string; type: string },
@@ -154,6 +159,156 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
   useEffect(() => {
     latestEditedContentRef.current = editedContent;
   }, [editedContent]);
+
+  useEffect(() => {
+    setActiveTimelineEvent(0);
+    setActiveGraphicLabel(0);
+    setActiveGalleryCarouselIndex(0);
+    setSelectedScenarioChoice(null);
+  }, [contentBlock.id]);
+
+  const getStoredFileUrl = (storageKey: string) =>
+    /^https?:\/\//i.test(storageKey) ? storageKey : `/uploads/${storageKey}`;
+
+  const renderImagePlaceholder = (title: string, description: string, compact = false) => (
+    <div
+      className={`flex flex-col items-center justify-center rounded-2xl bg-slate-100/70 text-center ${
+        compact ? "min-h-[56px] px-4 py-2" : "min-h-[64px] px-6 py-3"
+      }`}
+    >
+      <h4 className="text-base font-medium text-slate-900">{title}</h4>
+      <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{description}</p>
+    </div>
+  );
+
+  const renderImageUploadSurface = (
+    key: string,
+    currentUrl: string,
+    altText: string,
+    title: string,
+    description: string,
+    onUploaded: (url: string, fileName: string) => void,
+    options?: { compact?: boolean; aspectClassName?: string; borderless?: boolean },
+  ) => {
+    const compact = options?.compact ?? false;
+    const aspectClassName = options?.aspectClassName ?? (compact ? "aspect-[16/8]" : "aspect-[16/6]");
+    const borderless = options?.borderless ?? false;
+
+    return (
+      <div className={`group relative w-full overflow-hidden rounded-2xl bg-slate-100/70 ${aspectClassName} ${borderless ? "" : ""}`}>
+        {currentUrl ? (
+          <img
+            src={currentUrl}
+            alt={altText}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          renderImagePlaceholder(title, description, compact)
+        )}
+        <label className="absolute inset-0 flex cursor-pointer items-end justify-end p-3">
+          <span className="rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm">
+            {uploadingImageKey === key ? "Uploading..." : currentUrl ? "Replace image" : "Upload image"}
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={uploadingImageKey === key}
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null;
+              void handleImageAssetUpload(key, file, onUploaded);
+              e.currentTarget.value = "";
+            }}
+            data-testid={`input-inline-image-file-${key}`}
+          />
+        </label>
+      </div>
+    );
+  };
+
+  const normalizeGalleryLayout = (layout: string | undefined) => {
+    if (layout === "carousel" || layout === "two-column-grid" || layout === "three-column-grid") {
+      return layout;
+    }
+    return "";
+  };
+
+  const getGallerySlotCount = (layout: string | undefined) => {
+    const normalizedLayout = normalizeGalleryLayout(layout);
+    if (!normalizedLayout) {
+      return 0;
+    }
+    if (normalizedLayout === "carousel") {
+      return 3;
+    }
+    if (normalizedLayout === "two-column-grid") {
+      return 2;
+    }
+    return 3;
+  };
+
+  const getGallerySlots = (content: any, options?: { preserveAll?: boolean }) => {
+    const slotCount = getGallerySlotCount(content.layout);
+    const images = Array.isArray(content.images) ? content.images : [];
+    const totalSlots = options?.preserveAll ? Math.max(images.length, slotCount) : slotCount;
+    return Array.from({ length: totalSlots }, (_, index) => ({
+      url: typeof images[index]?.url === "string" ? images[index].url : "",
+      alt: typeof images[index]?.alt === "string" ? images[index].alt : "",
+    }));
+  };
+
+  const buildGalleryImagesFromLatest = (
+    layout: "carousel" | "two-column-grid" | "three-column-grid",
+    updater: (images: { url: string; alt: string }[]) => { url: string; alt: string }[],
+  ) => {
+    const latestContent = latestEditedContentRef.current as any;
+    const latestImages = getGallerySlots({
+      ...latestContent,
+      layout,
+    }, { preserveAll: true });
+    return updater(latestImages);
+  };
+
+  const handleImageAssetUpload = async (
+    key: string,
+    file: File | null,
+    onUploaded: (url: string, fileName: string) => void,
+  ) => {
+    if (!file) {
+      toast({
+        title: "No image selected",
+        description: "Choose an image file first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadingImageKey(key);
+      const moduleResponse = await apiRequest("GET", `/api/modules/${contentBlock.moduleId}`);
+      const module = await moduleResponse.json();
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("assetType", "image");
+
+      const assetResponse = await apiRequest("POST", `/api/courses/${module.courseId}/media-upload`, formData);
+      const asset = await assetResponse.json();
+      onUploaded(getStoredFileUrl(asset.filename), file.name);
+      toast({
+        title: "Image uploaded",
+        description: "The block now uses the uploaded image.",
+      });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload image.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingImageKey(null);
+    }
+  };
 
   const deleteContentBlockMutation = useMutation({
     mutationFn: async () => {
@@ -256,6 +411,32 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
       setIsSaving(false);
     }
   }, [debouncedContent, contentBlock.content, updateContentBlockMutation, isSaving]);
+
+  const saveContentImmediately = (nextContent: Record<string, any>) => {
+    setEditedContent(nextContent);
+    const nextContentString = JSON.stringify(nextContent);
+    lastSavedContentRef.current = nextContentString;
+    setIsSaving(true);
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        await apiRequest("PUT", `/api/content-blocks/${contentBlock.id}`, {
+          content: nextContent,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/modules", contentBlock.moduleId, "content-blocks"] });
+      })
+      .catch((error) => {
+        console.error("Failed to save content immediately:", error);
+        toast({
+          title: "Error",
+          description: "Failed to save changes. Please try again.",
+          variant: "destructive",
+        });
+      })
+      .finally(() => {
+        setIsSaving(false);
+      });
+  };
 
   const handleDelete = () => {
     if (window.confirm("Are you sure you want to delete this block?")) {
@@ -913,46 +1094,22 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
       case "image":
       case "ai-image":
         const editorImageProps = getImageDisplayProps(content, `content-${contentBlock.id}`);
+        const singleImageUploadKey = `image-${contentBlock.id}`;
         return (
           <div className="space-y-3" data-testid={`edit-image-${contentBlock.id}`}>
-            {editorImageProps.url && (
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                <img
-                  src={editorImageProps.url}
-                  alt={editorImageProps.alt}
-                  className="h-[400px] w-full rounded-lg object-cover"
-                />
-              </div>
-            )}
-            {renderEditorField(
-              "Image URL",
-              <Input
-                value={content.url || ""}
-                onChange={(e) => setEditedContent({ ...content, url: e.target.value })}
-                placeholder="Paste an image URL"
-                className={editorFieldClass}
-                data-testid={`input-image-url-${contentBlock.id}`}
-              />,
-            )}
-            {renderEditorField(
-              "Alt text",
-              <Input
-                value={content.alt || ""}
-                onChange={(e) => setEditedContent({ ...content, alt: e.target.value })}
-                placeholder="Describe the image for accessibility"
-                className={editorFieldClass}
-                data-testid={`input-image-alt-${contentBlock.id}`}
-              />,
-            )}
-            {renderEditorField(
-              "Caption",
-              <Input
-                value={content.caption || ""}
-                onChange={(e) => setEditedContent({ ...content, caption: e.target.value })}
-                placeholder="Optional caption"
-                className={editorFieldClass}
-                data-testid={`input-image-caption-${contentBlock.id}`}
-              />,
+            {renderImageUploadSurface(
+              singleImageUploadKey,
+              editorImageProps.url,
+              editorImageProps.alt,
+              "Add an image",
+              "Click inside the image area to upload a file.",
+              (url, fileName) =>
+                saveContentImmediately({
+                  ...content,
+                  url,
+                  alt: content.alt || fileName.replace(/\.[^/.]+$/, ""),
+                }),
+              { aspectClassName: "aspect-[16/3]", borderless: true },
             )}
           </div>
         );
@@ -1014,6 +1171,142 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
                   data-testid={`input-audio-script-${contentBlock.id}`}
                 />,
               )
+            )}
+          </div>
+        );
+
+      case "gallery":
+        const galleryLayout = normalizeGalleryLayout(content.layout);
+        const gallerySlots = getGallerySlots(content);
+        const updateGalleryLayout = (layout: "carousel" | "two-column-grid" | "three-column-grid") => {
+          const nextImages = getGallerySlots(
+            { ...(latestEditedContentRef.current as any), layout },
+            { preserveAll: true },
+          );
+          setEditedContent({ ...content, layout, images: nextImages });
+          setActiveGalleryCarouselIndex(0);
+        };
+        return (
+          <div className="space-y-4" data-testid={`edit-gallery-${contentBlock.id}`}>
+            {renderEditorField(
+              "Layout",
+              <div className="flex gap-2">
+                <Button
+                  variant={galleryLayout === "carousel" ? "default" : "outline"}
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => updateGalleryLayout("carousel")}
+                  data-testid={`button-gallery-carousel-${contentBlock.id}`}
+                >
+                  Carousel
+                </Button>
+                <Button
+                  variant={galleryLayout === "two-column-grid" ? "default" : "outline"}
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => updateGalleryLayout("two-column-grid")}
+                  data-testid={`button-gallery-two-column-${contentBlock.id}`}
+                >
+                  2 Column Grid
+                </Button>
+                <Button
+                  variant={galleryLayout === "three-column-grid" ? "default" : "outline"}
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => updateGalleryLayout("three-column-grid")}
+                  data-testid={`button-gallery-three-column-${contentBlock.id}`}
+                >
+                  3 Column Grid
+                </Button>
+              </div>,
+            )}
+
+            {!galleryLayout ? (
+              renderImagePlaceholder(
+                "Choose a gallery layout",
+                "Select Carousel, 2 Column Grid, or 3 Column Grid to start adding images.",
+                true,
+              )
+            ) : galleryLayout === "carousel" ? (
+              <div className="space-y-3">
+                <div className="relative">
+                  {renderImageUploadSurface(
+                    `gallery-${contentBlock.id}-${activeGalleryCarouselIndex}`,
+                    gallerySlots[activeGalleryCarouselIndex]?.url || "",
+                    gallerySlots[activeGalleryCarouselIndex]?.alt || `Carousel slide ${activeGalleryCarouselIndex + 1}`,
+                    `Carousel slide ${activeGalleryCarouselIndex + 1}`,
+                    "Click inside the image area to upload a file for this slide.",
+                    (url, fileName) => {
+                      const images = buildGalleryImagesFromLatest(galleryLayout, (latestImages) => {
+                        latestImages[activeGalleryCarouselIndex] = {
+                          ...latestImages[activeGalleryCarouselIndex],
+                          url,
+                          alt: latestImages[activeGalleryCarouselIndex]?.alt || fileName.replace(/\.[^/.]+$/, ""),
+                        };
+                        return latestImages;
+                      });
+                      saveContentImmediately({ ...latestEditedContentRef.current, layout: galleryLayout, images });
+                    },
+                    {
+                      compact: true,
+                      aspectClassName: "aspect-[16/6]",
+                      borderless: true,
+                    },
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full"
+                    onClick={() => setActiveGalleryCarouselIndex((prev) => Math.max(0, prev - 1))}
+                    disabled={activeGalleryCarouselIndex === 0}
+                    data-testid={`button-gallery-carousel-prev-${contentBlock.id}`}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full"
+                    onClick={() => setActiveGalleryCarouselIndex((prev) => Math.min(2, prev + 1))}
+                    disabled={activeGalleryCarouselIndex === 2}
+                    data-testid={`button-gallery-carousel-next-${contentBlock.id}`}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className={`grid gap-4 ${galleryLayout === "two-column-grid" ? "grid-cols-2" : "grid-cols-3"}`}>
+                {gallerySlots.map((image: any, index: number) => (
+                  <div key={index} className="p-0">
+                    {renderImageUploadSurface(
+                      `gallery-${contentBlock.id}-${index}`,
+                      image.url || "",
+                      image.alt || `Gallery image ${index + 1}`,
+                      `Gallery image ${index + 1}`,
+                      "Click inside the image area to upload a file for this slot.",
+                      (url, fileName) => {
+                        const images = buildGalleryImagesFromLatest(galleryLayout, (latestImages) => {
+                          latestImages[index] = {
+                            ...latestImages[index],
+                            url,
+                            alt: latestImages[index]?.alt || fileName.replace(/\.[^/.]+$/, ""),
+                          };
+                          return latestImages;
+                        });
+                        saveContentImmediately({ ...latestEditedContentRef.current, layout: galleryLayout, images });
+                      },
+                      {
+                        compact: true,
+                        aspectClassName: "aspect-[4/3]",
+                        borderless: true,
+                      },
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         );
@@ -1527,6 +1820,273 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
           </div>
         );
 
+      case "labeled-graphic":
+        return (
+          <div className="space-y-4" data-testid={`edit-labeled-graphic-${contentBlock.id}`}>
+            {renderEditorField(
+              "Image URL",
+              <Input
+                value={content.image?.url || ""}
+                onChange={(e) =>
+                  setEditedContent({
+                    ...content,
+                    image: { ...(content.image || {}), url: e.target.value },
+                  })
+                }
+                placeholder="Paste an image URL"
+                className={editorFieldClass}
+                data-testid={`input-labeled-graphic-image-url-${contentBlock.id}`}
+              />,
+            )}
+            {renderEditorField(
+              "Alt text",
+              <Input
+                value={content.image?.alt || ""}
+                onChange={(e) =>
+                  setEditedContent({
+                    ...content,
+                    image: { ...(content.image || {}), alt: e.target.value },
+                  })
+                }
+                placeholder="Describe the image for accessibility"
+                className={editorFieldClass}
+                data-testid={`input-labeled-graphic-image-alt-${contentBlock.id}`}
+              />,
+            )}
+
+            {Array.isArray(content.labels) && content.labels.length > 0
+              ? renderEditorSection(
+                  `Labels (${content.labels.length})`,
+                  <div className="space-y-3">
+                    {content.labels.map((label: any, index: number) => (
+                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            Label {index + 1}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const labels = [...(content.labels || [])];
+                              labels.splice(index, 1);
+                              setEditedContent({ ...content, labels });
+                            }}
+                            data-testid={`button-remove-labeled-graphic-label-${index}-${contentBlock.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <Input
+                            value={label.title || ""}
+                            onChange={(e) => {
+                              const labels = [...(content.labels || [])];
+                              labels[index] = { ...labels[index], title: e.target.value };
+                              setEditedContent({ ...content, labels });
+                            }}
+                            placeholder="Label title"
+                            className={editorFieldClass}
+                            data-testid={`input-labeled-graphic-label-title-${index}-${contentBlock.id}`}
+                          />
+                          <Input
+                            value={label.x ?? ""}
+                            onChange={(e) => {
+                              const labels = [...(content.labels || [])];
+                              labels[index] = { ...labels[index], x: e.target.value };
+                              setEditedContent({ ...content, labels });
+                            }}
+                            placeholder="X position (%)"
+                            className={editorFieldClass}
+                            data-testid={`input-labeled-graphic-label-x-${index}-${contentBlock.id}`}
+                          />
+                          <Input
+                            value={label.y ?? ""}
+                            onChange={(e) => {
+                              const labels = [...(content.labels || [])];
+                              labels[index] = { ...labels[index], y: e.target.value };
+                              setEditedContent({ ...content, labels });
+                            }}
+                            placeholder="Y position (%)"
+                            className={editorFieldClass}
+                            data-testid={`input-labeled-graphic-label-y-${index}-${contentBlock.id}`}
+                          />
+                          <Textarea
+                            value={label.content || ""}
+                            onChange={(e) => {
+                              const labels = [...(content.labels || [])];
+                              labels[index] = { ...labels[index], content: e.target.value };
+                              setEditedContent({ ...content, labels });
+                            }}
+                            placeholder="What should display when this hotspot is clicked?"
+                            className={`min-h-[88px] ${editorFieldClass}`}
+                            data-testid={`input-labeled-graphic-label-content-${index}-${contentBlock.id}`}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>,
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      const nextIndex = Array.isArray(content.labels) ? content.labels.length : 0;
+                      const labels = [
+                        ...(content.labels || []),
+                        {
+                          title: "",
+                          content: "",
+                          x: Math.min(80, 20 + nextIndex * 15),
+                          y: Math.min(80, 25 + nextIndex * 12),
+                        },
+                      ];
+                      setEditedContent({ ...content, labels });
+                    }}
+                    data-testid={`button-add-labeled-graphic-label-${contentBlock.id}`}
+                  >
+                    Add label
+                  </Button>,
+                  "Use x and y values from 0 to 100 to place each hotspot on the image.",
+                )
+              : renderEditorSection(
+                  "Labels",
+                  renderEditorEmptyState(
+                    "No labels yet",
+                    "Add hotspot labels to make the graphic interactive.",
+                  ),
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      const labels = [
+                        ...(content.labels || []),
+                        { title: "", content: "", x: 30, y: 30 },
+                      ];
+                      setEditedContent({ ...content, labels });
+                    }}
+                    data-testid={`button-add-labeled-graphic-label-${contentBlock.id}`}
+                  >
+                    Add label
+                  </Button>,
+                )}
+          </div>
+        );
+
+      case "scenario":
+        return (
+          <div className="space-y-4" data-testid={`edit-scenario-${contentBlock.id}`}>
+            {renderEditorField(
+              "Title",
+              <Input
+                value={content.title || ""}
+                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+                placeholder="Scenario title"
+                className={editorFieldClass}
+                data-testid={`input-scenario-title-${contentBlock.id}`}
+              />,
+            )}
+            {renderEditorField(
+              "Description",
+              <Textarea
+                value={content.description || ""}
+                onChange={(e) => setEditedContent({ ...content, description: e.target.value })}
+                placeholder="Describe the situation and learner decision point."
+                className={editorTextareaClass}
+                data-testid={`input-scenario-description-${contentBlock.id}`}
+              />,
+            )}
+
+            {Array.isArray(content.choices) && content.choices.length > 0
+              ? renderEditorSection(
+                  `Choices (${content.choices.length})`,
+                  <div className="space-y-3">
+                    {content.choices.map((choice: any, index: number) => (
+                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            Choice {index + 1}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const choices = [...(content.choices || [])];
+                              choices.splice(index, 1);
+                              setEditedContent({ ...content, choices });
+                            }}
+                            data-testid={`button-remove-scenario-choice-${index}-${contentBlock.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-3">
+                          <Input
+                            value={choice.text || ""}
+                            onChange={(e) => {
+                              const choices = [...(content.choices || [])];
+                              choices[index] = { ...choices[index], text: e.target.value };
+                              setEditedContent({ ...content, choices });
+                            }}
+                            placeholder="Choice text"
+                            className={editorFieldClass}
+                            data-testid={`input-scenario-choice-text-${index}-${contentBlock.id}`}
+                          />
+                          <Textarea
+                            value={choice.feedback || choice.outcome || ""}
+                            onChange={(e) => {
+                              const choices = [...(content.choices || [])];
+                              choices[index] = {
+                                ...choices[index],
+                                feedback: e.target.value,
+                                outcome: e.target.value,
+                              };
+                              setEditedContent({ ...content, choices });
+                            }}
+                            placeholder="What should display after this choice is selected?"
+                            className={`min-h-[88px] ${editorFieldClass}`}
+                            data-testid={`input-scenario-choice-feedback-${index}-${contentBlock.id}`}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>,
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      const choices = [...(content.choices || []), { text: "", feedback: "", outcome: "" }];
+                      setEditedContent({ ...content, choices });
+                    }}
+                    data-testid={`button-add-scenario-choice-${contentBlock.id}`}
+                  >
+                    Add choice
+                  </Button>,
+                )
+              : renderEditorSection(
+                  "Choices",
+                  renderEditorEmptyState(
+                    "No scenario choices yet",
+                    "Add at least one decision path so learners can interact with the scenario.",
+                  ),
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      const choices = [...(content.choices || []), { text: "", feedback: "", outcome: "" }];
+                      setEditedContent({ ...content, choices });
+                    }}
+                    data-testid={`button-add-scenario-choice-${contentBlock.id}`}
+                  >
+                    Add choice
+                  </Button>,
+                )}
+          </div>
+        );
+
       case "sorting-activity":
         return (
           <div className="space-y-4" data-testid={`edit-sorting-activity-${contentBlock.id}`}>
@@ -1823,38 +2383,82 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
         const imageProps = getImageDisplayProps(content, `content-${contentBlock.id}`);
         return (
           <div data-testid={`content-image-${contentBlock.id}`}>
-            <img 
-              src={imageProps.url} 
-              alt={imageProps.alt} 
-              className="h-[400px] w-full rounded-lg object-cover" 
-            />
-            {imageProps.caption && (
-              <p className="text-sm text-muted-foreground mt-2">{imageProps.caption}</p>
+            {imageProps.url ? (
+              <div className="w-full overflow-hidden rounded-2xl">
+                <img 
+                  src={imageProps.url} 
+                  alt={imageProps.alt} 
+                  className="aspect-[16/3] w-full object-cover" 
+                />
+              </div>
+            ) : (
+              renderImagePlaceholder(
+                "Image placeholder",
+                "No image has been added to this block yet.",
+              )
             )}
           </div>
         );
 
       case "gallery":
+        const previewGalleryLayout = normalizeGalleryLayout(content.layout);
+        const galleryImages = getGallerySlots(content).filter((img: any) => typeof img?.url === "string" && img.url.trim());
+        const activePreviewCarouselImage = galleryImages[activeGalleryCarouselIndex] || galleryImages[0];
         return (
           <div data-testid={`content-gallery-${contentBlock.id}`}>
-            <div className="grid md:grid-cols-3 gap-4">
-              {content.images?.slice(0, 6).map((img: any, index: number) => (
-                <div key={index} className="rounded-lg overflow-hidden">
-                  <img 
-                    src={img.url || `https://picsum.photos/seed/gallery-${contentBlock.id}-${index}/300/200`} 
-                    alt={img.alt || `Gallery image ${index + 1}`}
-                    className="w-full h-48 object-cover"
-                  />
-                  {img.caption && (
-                    <p className="text-xs text-muted-foreground mt-1 px-1">{img.caption}</p>
-                  )}
+            {galleryImages.length > 0 ? (
+              previewGalleryLayout === "carousel" ? (
+                activePreviewCarouselImage ? (
+                  <div className="relative overflow-hidden rounded-2xl">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full"
+                      onClick={() => setActiveGalleryCarouselIndex((prev) => Math.max(0, prev - 1))}
+                      disabled={activeGalleryCarouselIndex === 0}
+                      data-testid={`button-preview-gallery-carousel-prev-${contentBlock.id}`}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full"
+                      onClick={() => setActiveGalleryCarouselIndex((prev) => Math.min(galleryImages.length - 1, prev + 1))}
+                      disabled={activeGalleryCarouselIndex >= galleryImages.length - 1}
+                      data-testid={`button-preview-gallery-carousel-next-${contentBlock.id}`}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                      <img 
+                        src={activePreviewCarouselImage.url} 
+                        alt={activePreviewCarouselImage.alt || "Gallery image"}
+                        className="aspect-[16/6] w-full object-cover"
+                      />
+                  </div>
+                ) : null
+              ) : (
+                <div className={`grid gap-4 ${previewGalleryLayout === "two-column-grid" ? "grid-cols-2" : "grid-cols-3"}`}>
+                  {galleryImages.map((img: any, index: number) => (
+                    <div key={index} className="overflow-hidden rounded-2xl">
+                      <img 
+                        src={img.url} 
+                        alt={img.alt || `Gallery image ${index + 1}`}
+                        className="aspect-[4/3] w-full object-cover"
+                      />
+                    </div>
+                  ))}
                 </div>
-              )) || (
-                <div className="col-span-3 text-center text-muted-foreground">
-                  No images in gallery yet
-                </div>
-              )}
-            </div>
+              )
+            ) : (
+              renderImagePlaceholder(
+                "Gallery placeholder",
+                "No gallery images have been added yet.",
+                true,
+              )
+            )}
           </div>
         );
 
@@ -2215,41 +2819,65 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
         );
 
       case "labeled-graphic":
+        const previewLabels = Array.isArray(content.labels) ? content.labels : [];
+        const selectedGraphicLabel = previewLabels[activeGraphicLabel] || previewLabels[0];
         return (
-          <div className="relative" data-testid={`content-labeled-graphic-${contentBlock.id}`}>
+          <div className="space-y-4" data-testid={`content-labeled-graphic-${contentBlock.id}`}>
             <div className="bg-rose-100 dark:bg-rose-900 rounded-lg aspect-video flex items-center justify-center relative overflow-hidden">
               <img 
                 src={content.image?.url || `https://picsum.photos/seed/labeled-${contentBlock.id}/600/400`} 
                 alt={content.image?.alt || "Labeled graphic"}
                 className="w-full h-full object-cover"
               />
-              {(Array.isArray(content.labels) ? content.labels : []).slice(0, 3).map((label: any, index: number) => (
-                <div 
+              {previewLabels.map((label: any, index: number) => (
+                <button
+                  type="button"
                   key={index}
-                  className="absolute bg-rose-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold cursor-pointer hover:bg-rose-600 transition-colors"
+                  className={`absolute flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-bold text-white shadow-sm transition-all ${
+                    activeGraphicLabel === index
+                      ? "border-white bg-rose-700 scale-110"
+                      : "border-rose-100 bg-rose-500 hover:bg-rose-600"
+                  }`}
                   style={{ 
-                    left: `${20 + index * 25}%`, 
-                    top: `${30 + index * 20}%` 
+                    left: `${typeof label.x === "number" || /^\d+(\.\d+)?$/.test(String(label.x || "")) ? Number(label.x) : 20 + index * 25}%`, 
+                    top: `${typeof label.y === "number" || /^\d+(\.\d+)?$/.test(String(label.y || "")) ? Number(label.y) : 30 + index * 20}%`,
+                    transform: "translate(-50%, -50%)",
                   }}
-                  title={label.content || `Label ${index + 1}`}
+                  title={label.title || label.content || `Label ${index + 1}`}
+                  onClick={() => setActiveGraphicLabel(index)}
+                  data-testid={`button-labeled-graphic-label-${index}-${contentBlock.id}`}
                 >
                   {index + 1}
-                </div>
+                </button>
               ))}
             </div>
-            {content.labels && content.labels.length > 0 && (
-              <div className="mt-3 text-sm text-rose-600 dark:text-rose-400">
-                Click the numbered points to explore the interactive elements
+            {previewLabels.length > 0 && selectedGraphicLabel ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-800 dark:bg-rose-950/60">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-500 dark:text-rose-300">
+                  Selected hotspot
+                </div>
+                <h4 className="mt-2 font-medium text-rose-900 dark:text-rose-100">
+                  {selectedGraphicLabel.title || `Label ${activeGraphicLabel + 1}`}
+                </h4>
+                <p className="mt-2 text-sm leading-7 text-rose-700 dark:text-rose-200">
+                  {selectedGraphicLabel.content || "Add content to this label to explain the selected part of the graphic."}
+                </p>
+              </div>
+            ) : (
+              <div className="text-sm text-rose-600 dark:text-rose-400">
+                Add hotspot labels to make this graphic interactive.
               </div>
             )}
           </div>
         );
 
       case "scenario":
+        const scenarioChoices = Array.isArray(content.choices) ? content.choices : [];
+        const activeChoice = selectedScenarioChoice !== null ? scenarioChoices[selectedScenarioChoice] : null;
         return (
           <div className="bg-violet-50 dark:bg-violet-950 border border-violet-200 dark:border-violet-800 rounded-lg p-4" data-testid={`content-scenario-${contentBlock.id}`}>
             <div className="flex items-start space-x-3">
-              <div className="text-2xl">ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â­</div>
+              <div className="rounded-full bg-violet-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-violet-800 dark:bg-violet-800 dark:text-violet-100">Scenario</div>
               <div className="flex-1">
                 <h4 className="font-medium text-violet-800 dark:text-violet-200 mb-2">
                   {content.title || "Interactive Scenario"}
@@ -2257,16 +2885,28 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
                 <p className="text-sm text-violet-600 dark:text-violet-400 mb-3">
                   {content.description || "This scenario presents learners with realistic situations and decision-making opportunities."}
                 </p>
-                {content.choices && (
+                {scenarioChoices.length > 0 && (
                   <div className="space-y-2">
-                    {(Array.isArray(content.choices) ? content.choices : []).slice(0, 3).map((choice: any, index: number) => (
+                    {scenarioChoices.map((choice: any, index: number) => (
                       <button 
                         key={index}
-                        className="w-full text-left p-2 bg-violet-100 dark:bg-violet-900 hover:bg-violet-200 dark:hover:bg-violet-800 rounded text-sm text-violet-700 dark:text-violet-300 transition-colors"
+                        type="button"
+                        onClick={() => setSelectedScenarioChoice(index)}
+                        className={`w-full rounded p-2 text-left text-sm transition-colors ${
+                          selectedScenarioChoice === index
+                            ? "bg-violet-700 text-white"
+                            : "bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900 dark:text-violet-300 dark:hover:bg-violet-800"
+                        }`}
+                        data-testid={`button-scenario-choice-${index}-${contentBlock.id}`}
                       >
                         {choice.text || `Choice ${index + 1}`}
                       </button>
                     ))}
+                  </div>
+                )}
+                {activeChoice && (
+                  <div className="mt-4 rounded-xl border border-violet-200 bg-white p-3 text-sm text-violet-800 shadow-sm dark:border-violet-700 dark:bg-violet-900/60 dark:text-violet-100">
+                    {activeChoice.feedback || activeChoice.outcome || "Add feedback to this choice in edit mode to display the learner outcome."}
                   </div>
                 )}
               </div>
@@ -2277,12 +2917,12 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
       case "continue":
         return (
           <div className="text-center py-6" data-testid={`content-continue-${contentBlock.id}`}>
-            <div className="inline-flex items-center space-x-2 rounded-full border border-slate-200 bg-white px-6 py-3 shadow-sm transition-colors hover:border-slate-300">
+            <a href={content.url || undefined} className="inline-flex items-center space-x-2 rounded-full border border-slate-200 bg-white px-6 py-3 shadow-sm transition-colors hover:border-slate-300" data-testid={`link-continue-${contentBlock.id}`}>
               <span className="font-medium text-slate-800">
                 {content.text || "Continue"}
               </span>
               <span className="text-slate-400">â†’</span>
-            </div>
+            </a>
           </div>
         );
 

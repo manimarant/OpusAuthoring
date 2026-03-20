@@ -25,7 +25,17 @@ import CourseNavigation from "@/components/course/course-navigation";
 
 type AiPreview =
   | { type: "text"; content: { text?: string; html?: string } }
-  | { type: "image"; content: { url?: string; alt?: string; caption?: string } }
+  | {
+      type: "image";
+      content: {
+        url?: string;
+        alt?: string;
+        caption?: string;
+        imagePrompt?: string;
+        suggestedStyle?: string;
+        isGenerated?: boolean;
+      };
+    }
   | {
       type: "audio";
       content: {
@@ -685,6 +695,74 @@ export default function ModuleContent() {
       }
     }
 
+    if (type === "ai-audio") {
+      try {
+        const chapterTitle = displayChapter?.title || currentModule?.title || "Lesson audio";
+        const chapterSummary = String(displayChapter?.description || currentModule?.description || "")
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        toast({
+          title: "Generating audio...",
+          description: `Creating a short narration for ${chapterTitle}.`,
+        });
+
+        const response = await apiRequest("POST", "/api/ai/generate-audio", {
+          moduleId,
+          provider: "gemini",
+          type: "explanation",
+          prompt: `Write a spoken lesson narration for the chapter titled "${chapterTitle}". ${chapterSummary ? `Chapter summary: ${chapterSummary}. ` : ""}Keep it under 35 words so the audio stays within 15 seconds. Use a concise educational tone and focus on the key takeaway.`,
+          style: {
+            tone: "friendly",
+            readingLevel: "intermediate",
+          },
+          length: "short",
+          includeCourseContext: true,
+        });
+
+        const data = await response.json();
+        const audioContent = {
+          ...content,
+          title: `Audio: ${chapterTitle}`,
+          description: "AI-generated audio narration",
+          script: data.script,
+          url: data.audioUrl,
+          duration: data.duration || "0:15",
+          voiceId: data.voiceId,
+          modelId: data.audioModel,
+          isGenerated: true,
+        };
+
+        if (insertIndex === orderedBlocks.length) {
+          createContentBlockMutation.mutate({
+            type,
+            content: audioContent,
+            order,
+            metadata: {
+              isAiGenerated: true,
+              successTitle: "Audio generated successfully",
+              successDescription: `Added a short ElevenLabs narration for ${chapterTitle}.`,
+            },
+          });
+        } else {
+          await insertBlockAt(type, audioContent, insertIndex, {
+            isAiGenerated: true,
+            successTitle: "Audio generated successfully",
+            successDescription: `Added a short ElevenLabs narration for ${chapterTitle}.`,
+          });
+        }
+        return;
+      } catch (error) {
+        toast({
+          title: "Audio generation failed",
+          description: error instanceof Error ? error.message : "Unable to generate audio.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     if (insertIndex === orderedBlocks.length) {
       createContentBlockMutation.mutate({ type, content, order });
       setActiveInsertIndex(null);
@@ -830,14 +908,25 @@ export default function ModuleContent() {
       const wantsAudio = /\b(audio|narration|voiceover|podcast|speech|spoken)\b/.test(lowerPrompt);
 
       if (wantsImage) {
-        const response = await apiRequest("POST", "/api/ai/generate-image", { prompt });
+        const chapterTitle = displayChapter?.title || currentModule?.title || "Lesson image";
+        const moduleTitle = displayModule?.title;
+        const response = await apiRequest("POST", "/api/ai/generate-chapter-image", {
+          chapterTitle,
+          moduleTitle,
+          courseId: course?.id,
+          size: "1792x1024",
+          allowFallback: false,
+        });
         const data = await response.json();
         setAiPreview({
           type: "image",
           content: {
-            url: data.url,
-            caption: prompt,
-            alt: prompt,
+            url: data.imageUrl,
+            caption: data.visualBrief || chapterTitle,
+            alt: chapterTitle,
+            imagePrompt: data.imagePrompt,
+            suggestedStyle: data.suggestedStyle,
+            isGenerated: Boolean(data.isAIGenerated),
           },
         });
         return;
