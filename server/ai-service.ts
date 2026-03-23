@@ -1,10 +1,85 @@
+import fs from "node:fs";
+import https from "node:https";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import nodeFetch, { type RequestInit, type Response } from "node-fetch";
 import type { AiGenerateTextRequest, AiGenerateQuizRequest, AiGenerateVideoRequest } from "@shared/schema";
 
 // Using Gemini Flash model  
 const apiKey = process.env.GEMINI_API_KEY || "";
 
 const ai = new GoogleGenerativeAI(apiKey);
+
+let tavusHttpsAgent: https.Agent | undefined;
+let tavusHttpsAgentCacheKey: string | undefined;
+
+function getTavusHttpsAgent(): https.Agent | undefined {
+  const caCertPath =
+    process.env.TAVUS_CA_CERT_PATH ||
+    process.env.NODE_EXTRA_CA_CERTS ||
+    process.env.SSL_CERT_FILE;
+  const allowInsecureTls = process.env.TAVUS_ALLOW_INSECURE_TLS === "true";
+  const cacheKey = `${caCertPath || ""}|${allowInsecureTls}`;
+
+  if (tavusHttpsAgent && tavusHttpsAgentCacheKey === cacheKey) {
+    return tavusHttpsAgent;
+  }
+
+  if (!caCertPath && !allowInsecureTls) {
+    tavusHttpsAgent = undefined;
+    tavusHttpsAgentCacheKey = cacheKey;
+    return undefined;
+  }
+
+  const agentOptions: https.AgentOptions = {};
+
+  if (caCertPath) {
+    if (!fs.existsSync(caCertPath)) {
+      throw new Error(`TAVUS_CA_CERT_PATH file not found: ${caCertPath}`);
+    }
+
+    agentOptions.ca = fs.readFileSync(caCertPath, "utf8");
+  }
+
+  if (allowInsecureTls) {
+    console.warn("TAVUS_ALLOW_INSECURE_TLS=true. TLS certificate validation is disabled for Tavus requests.");
+    agentOptions.rejectUnauthorized = false;
+  }
+
+  tavusHttpsAgent = new https.Agent(agentOptions);
+  tavusHttpsAgentCacheKey = cacheKey;
+  return tavusHttpsAgent;
+}
+
+function normalizeTavusFetchError(error: unknown): Error {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorCause = error instanceof Error ? (error as any).cause : null;
+  const errorCode = (error as any)?.code || errorCause?.code;
+
+  if (
+    errorCode === "SELF_SIGNED_CERT_IN_CHAIN" ||
+    errorMessage.includes("self-signed certificate") ||
+    (errorCause instanceof Error && errorCause.message.includes("self-signed certificate"))
+  ) {
+    return new Error(
+      "TLS validation failed when connecting to Tavus. This often happens behind corporate proxies. " +
+      "Set TAVUS_CA_CERT_PATH to your trusted root CA bundle, or set TAVUS_ALLOW_INSECURE_TLS=true for local debugging."
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+export async function tavusFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  try {
+    const agent = getTavusHttpsAgent();
+    return await nodeFetch(url, {
+      ...init,
+      agent,
+    });
+  } catch (error) {
+    throw normalizeTavusFetchError(error);
+  }
+}
 
 // Rate limiting storage (in-memory for now)
 const rateLimits = new Map<string, { requests: number; resetTime: number }>();
@@ -30,7 +105,7 @@ export function checkRateLimit(identifier: string): { allowed: boolean; retryAft
 function buildSystemPrompt(request: AiGenerateTextRequest, courseContext?: { title: string; topic: string; objectives: string }): string {
   const { type, style, length, currentText } = request;
   
-  let systemPrompt = "You are an expert educational content creator. ";
+  let systemPrompt = "You are an expert educational content creator. Do not start your responses with 'Welcome to' or similar introductory filler. ";
   
   // Quick action types (text editing)
   if (currentText && ['improve', 'fix-grammar', 'shorten', 'simplify', 'continue'].includes(type)) {
@@ -601,12 +676,14 @@ async function generateImageWithHuggingFace(
         : { width: 1024, height: 1024 };
 
   try {
-    const response = await fetch("https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell", {
+    const agent = getTavusHttpsAgent(); // Reuse the same agent logic for Hugging Face
+    const response = await nodeFetch("https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${huggingFaceToken}`,
         "Content-Type": "application/json",
       },
+      agent,
       body: JSON.stringify({
         inputs: prompt,
         parameters: {
@@ -1276,7 +1353,7 @@ Video Content: ${request.prompt}`;
     console.log(`🎥 Starting Tavus video generation...`);
     
     // Create video generation request
-    const response = await fetch('https://tavusapi.com/v2/videos', {
+    const response = await tavusFetch('https://tavusapi.com/v2/videos', {
       method: 'POST',
       headers: {
         'x-api-key': tavusApiKey,
@@ -1322,7 +1399,7 @@ Video Content: ${request.prompt}`;
       attempts++;
       
       try {
-        const statusResponse = await fetch(`https://tavusapi.com/v2/videos/${videoId}`, {
+        const statusResponse = await tavusFetch(`https://tavusapi.com/v2/videos/${videoId}`, {
           headers: {
             'x-api-key': tavusApiKey,
           },
@@ -1474,7 +1551,7 @@ Return JSON with keys: "videoPrompt", "suggestedNarration", and "keyPoints"`;
   // Fallback: create a basic prompt
   return {
     videoPrompt: `Educational video explaining ${chapterTitle}${moduleTitle ? ` from ${moduleTitle}` : ''}, featuring clear narration and supporting visuals`,
-    suggestedNarration: `Welcome to this educational video about ${chapterTitle}. In this video, we'll explore the key concepts and help you understand the important principles.`,
+    suggestedNarration: `This educational video about ${chapterTitle} explores key concepts and helps you understand the important principles.`,
     keyPoints: [`Understanding ${chapterTitle}`, "Key concepts and principles", "Practical applications"]
   };
 }

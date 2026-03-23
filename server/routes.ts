@@ -23,7 +23,7 @@ import {
   type MediaAssetType,
 } from "@shared/schema";
 import { z } from "zod";
-import { generateText, generateQuiz, generateAssignment, checkRateLimit, generateCourseOutline, generateChapterImagePrompt, generateImagePromptsForOutline, generateCompleteChapterImage, generateVideoWithTavus, generateVideoPrompt, generateCompleteVideo } from "./ai-service";
+import { generateText, generateQuiz, generateAssignment, checkRateLimit, generateCourseOutline, generateChapterImagePrompt, generateImagePromptsForOutline, generateCompleteChapterImage, generateVideoWithTavus, generateVideoPrompt, generateCompleteVideo, tavusFetch } from "./ai-service";
 import { selectStockImage, refreshStockImageCatalog, getStockImageCatalog } from "./stock-images";
 import { createScormPackage } from "./scorm-service";
 import { getUploadsDir } from "./app";
@@ -655,44 +655,52 @@ app.post("/api/modules/:moduleId/content-blocks", async (req, res) => {
             }
         }
 
-        // If it's an ai-text block, generate AI content automatically
+        // If it's an ai-text block, generate AI content automatically if none provided
         if (contentBlockData.type === 'ai-text') {
-            const module = await storage.getModule(req.params.moduleId);
-            if (module) {
-                const course = await storage.getCourse(module.courseId);
-                if (course) {
-                    try {
-                        // Create a proper AI request object
-                        const aiRequest = {
-                            moduleId: req.params.moduleId,
-                            provider: 'gemini' as const,
-                            type: 'explanation' as const,
-                            prompt: `Generate an introductory paragraph for a lesson module titled "${module.title}". This should provide a clear, engaging introduction that explains what the learner will discover in this section. Keep it concise but informative (2-3 paragraphs).`,
-                            length: 'medium' as const,
-                            style: {
-                                tone: 'friendly' as const,
-                                readingLevel: 'intermediate' as const
-                            },
-                            includeCourseContext: false
-                        };
+            const providedContent = contentBlockData.content as any;
+            // Check if content is actually provided and not just an empty placeholder from the client
+            const hasContent = providedContent && 
+                              ((providedContent.text && providedContent.text.trim().length > 0) || 
+                               (providedContent.html && providedContent.html.replace(/<[^>]*>/g, '').trim().length > 0));
 
-                        const courseContext = {
-                            title: course.title,
-                            topic: course.topic,
-                            objectives: course.learningObjectives
-                        };
+            if (!hasContent) {
+                const module = await storage.getModule(req.params.moduleId);
+                if (module) {
+                    const course = await storage.getCourse(module.courseId);
+                    if (course) {
+                        try {
+                            // Create a proper AI request object
+                            const aiRequest = {
+                                moduleId: req.params.moduleId,
+                                provider: 'gemini' as const,
+                                type: 'explanation' as const,
+                                prompt: `Generate educational content for a lesson module titled "${module.title}". Provide a clear, engaging explanation of the core concepts in this section. Keep it concise but informative (2-3 paragraphs).`,
+                                length: 'medium' as const,
+                                style: {
+                                    tone: 'friendly' as const,
+                                    readingLevel: 'intermediate' as const
+                                },
+                                includeCourseContext: false
+                            };
 
-                        // Generate relevant introductory content for the module
-                        const aiResult = await generateText(aiRequest, courseContext);
+                            const courseContext = {
+                                title: course.title,
+                                topic: course.topic,
+                                objectives: course.learningObjectives
+                            };
 
-                        // Set the generated text as default content for ai-text blocks
-                        contentBlockData.content = {
-                            text: aiResult.text.replace(/<[^>]*>/g, ''), // Plain text version
-                            html: `<p>${aiResult.text}</p>` // HTML version
-                        };
-                    } catch (aiError) {
-                        // Continue with empty content if AI generation fails
-                        contentBlockData.content = contentBlockData.content || {};
+                            // Generate relevant content for the module
+                            const aiResult = await generateText(aiRequest, courseContext);
+
+                            // Set the generated text as default content for ai-text blocks
+                            contentBlockData.content = {
+                                text: aiResult.text.replace(/<[^>]*>/g, ''), // Plain text version
+                                html: `<p>${aiResult.text}</p>` // HTML version
+                            };
+                        } catch (aiError) {
+                            // Continue with empty content if AI generation fails
+                            contentBlockData.content = contentBlockData.content || {};
+                        }
                     }
                 }
             }
@@ -2184,7 +2192,7 @@ app.get("/api/ai/video-status/:videoId", async (req, res) => {
             });
         }
 
-        const response = await fetch(`https://tavusapi.com/v2/videos/${videoId}`, {
+        const response = await tavusFetch(`https://tavusapi.com/v2/videos/${videoId}`, {
             headers: {
                 'x-api-key': tavusApiKey,
             },
