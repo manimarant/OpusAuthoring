@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import multer from "multer";
 import path from "path";
 import { storage } from "./storage";
+import { db } from "./db";
 import { 
   insertCourseSchema, 
   insertModuleSchema, 
@@ -18,6 +19,7 @@ import {
   aiGenerateQuizSchema,
   aiGenerateAssignmentSchema,
   aiGenerateVideoSchema,
+  ltiPlatforms,
   type AiGenerateQuizRequest,
   type CourseWithContent,
   type MediaAssetType,
