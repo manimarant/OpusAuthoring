@@ -39,10 +39,13 @@ export function createApp() {
   ensureUploadsDir();
 
   const app = express();
+  
+  // Basic parsers for non-upload routes
   const jsonParser = express.json({ limit: "15mb" });
-  const urlencodedParser = express.urlencoded({ extended: false, limit: "15mb" });
+  const urlencodedParser = express.urlencoded({ extended: true, limit: "15mb" });
 
   app.use((req, res, next) => {
+    // Skip JSON parsing for specific upload routes where multer is used
     if (req.path.includes("/upload") || req.path.includes("/media-upload")) {
       return next();
     }
@@ -50,9 +53,16 @@ export function createApp() {
   });
 
   app.use((req, res, next) => {
+    // Ensure LTI routes always get urlencoded parsing (Moodle sends form-urlencoded POSTs)
+    if (req.path.includes("/lti/")) {
+      return urlencodedParser(req, res, next);
+    }
+    
+    // Skip for other upload routes
     if (req.path.includes("/upload") || req.path.includes("/media-upload")) {
       return next();
     }
+    
     urlencodedParser(req, res, next);
   });
 
