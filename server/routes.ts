@@ -2386,9 +2386,9 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
   });
 
   // LTI 1.3 OIDC Login Initiation
-  app.get("/api/lti/login", async (req, res) => {
+  app.all("/api/lti/login", async (req, res) => {
     try {
-      const { iss, login_hint, target_link_uri, lti_message_hint, client_id } = req.query;
+      const { iss, login_hint, target_link_uri, lti_message_hint, client_id } = { ...req.query, ...req.body };
       
       if (!iss || !login_hint || !target_link_uri) {
         return res.status(400).send("Missing required parameters for LTI login");
