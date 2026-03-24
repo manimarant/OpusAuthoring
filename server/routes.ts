@@ -2395,7 +2395,7 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
   });
 
   // LTI 1.3 OIDC Login Initiation
-  app.all("/api/lti/login", async (req, res) => {
+  app.all(["/api/lti/login", "/api/lti/login/"], async (req, res) => {
     try {
       const { iss, login_hint, target_link_uri, lti_message_hint, client_id } = { ...req.query, ...req.body };
       
@@ -2405,7 +2405,8 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
 
       const platform = await storage.getLtiPlatformByIssuer(iss as string, (client_id as string) || "");
       if (!platform) {
-        return res.status(404).send("LTI Platform not registered");
+        console.error(`LTI Login error: Platform not registered for issuer=${iss} and clientId=${client_id}`);
+        return res.status(404).send(`LTI Platform not registered for issuer=${iss}`);
       }
 
       // Create state for CSRF protection
@@ -2439,7 +2440,7 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
   });
 
   // LTI 1.3 Launch endpoint
-  app.post("/api/lti/launch", async (req, res) => {
+  app.post(["/api/lti/launch", "/api/lti/launch/"], async (req, res) => {
     try {
       const { id_token, state } = req.body;
       
@@ -2510,7 +2511,7 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
   });
 
   // JWKS endpoint for public keys
-  app.get("/api/lti/jwks", async (req, res) => {
+  app.get(["/api/lti/jwks", "/api/lti/jwks/"], async (req, res) => {
     try {
       // In a real app, you'd store multiple keys and rotate them
       // For this demo, we'll fetch a platform's public key or have a global one
@@ -2531,6 +2532,12 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
     } catch (error) {
       res.status(500).json({ message: "Failed to serve JWKS" });
     }
+  });
+
+  // Debug route for LTI
+  app.all("/api/lti/*", (req, res) => {
+    console.log(`Unmatched LTI request: ${req.method} ${req.path}`);
+    res.status(404).send(`LTI Route not found: ${req.method} ${req.path}`);
   });
 
   const httpServer = createServer(app);
