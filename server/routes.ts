@@ -2433,40 +2433,38 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
       const { id_token, state } = req.body;
       
       if (!id_token) {
+        console.error("LTI Launch error: Missing id_token");
         return res.status(400).send("Missing id_token");
       }
 
       // Decode token to get issuer and kid
-      const header = jose.decodeProtectedHeader(id_token);
       const payload = jose.decodeJwt(id_token) as any;
       
       const iss = payload.iss;
       const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
       
+      console.log(`LTI Launch initiated: iss=${iss}, aud=${aud}`);
+
       const platform = await storage.getLtiPlatformByIssuer(iss, aud);
       if (!platform) {
-        return res.status(404).send("LTI Platform not found");
+        console.error(`LTI Launch error: Platform not found for iss=${iss}, aud=${aud}`);
+        return res.status(404).send("LTI Platform not found. Please ensure the tool is registered in both Moodle and this application.");
       }
 
-      // Fetch platform's public keys to verify signature
-      const jwksRes = await fetch(platform.keysetUrl);
-      const jwks = await jwksRes.json();
+      // Verify signature
       const JWKS = jose.createRemoteJWKSet(new URL(platform.keysetUrl));
-      
       const { payload: verifiedPayload } = await jose.jwtVerify(id_token, JWKS, {
         issuer: platform.issuer,
         audience: platform.clientId,
       });
 
-      // Successful launch!
-      // Extract course ID from target_link_uri or custom parameters
+      console.log("LTI Launch verified successfully");
+
+      // Extract course ID
       const customParams = (verifiedPayload as any)["https://purl.imsglobal.org/spec/lti/claim/custom"] || {};
       const targetLinkUri = (verifiedPayload as any).target_link_uri;
       
-      // Priority 1: Custom parameter 'course_id' (set in Moodle Activity)
-      // Priority 2: Custom parameter 'courseid'
-      // Priority 3: URL path in target_link_uri
-      let courseId = customParams.course_id || customParams.courseid;
+      let courseId = customParams.course_id || customParams.courseid || customParams.id;
       
       if (!courseId && targetLinkUri) {
         const courseIdMatch = targetLinkUri.match(/\/courses\/([^\/]+)/);
@@ -2474,12 +2472,14 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
       }
 
       if (!courseId) {
+        console.error("LTI Launch error: Could not determine course ID", { customParams, targetLinkUri });
         return res.status(400).send("Could not determine course ID from launch. Please set 'course_id=...' in Custom Parameters in Moodle.");
       }
 
-      // Redirect to the course view in the frontend
-      // In a real app, you'd create a session for the LTI user here
-      res.redirect(`/courses/${courseId}`);
+      console.log(`Redirecting to course: /courses/${courseId}`);
+      // Use a full URL for the redirect to be safe
+      const redirectUrl = `${req.protocol}://${req.get('host')}/courses/${courseId}`;
+      res.redirect(redirectUrl);
     } catch (error) {
       console.error("LTI Launch failed:", error);
       res.status(500).send("LTI Launch verification failed: " + (error instanceof Error ? error.message : String(error)));
