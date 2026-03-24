@@ -20,6 +20,7 @@ import {
   aiGenerateAssignmentSchema,
   aiGenerateVideoSchema,
   ltiPlatforms,
+  ltiStates,
   type AiGenerateQuizRequest,
   type CourseWithContent,
   type MediaAssetType,
@@ -177,6 +178,14 @@ async function generateElevenLabsAudio(text: string): Promise<{ audioUrl: string
     modelId,
     script,
   };
+}
+
+function getAppUrl(req: express.Request): string {
+  if (process.env.APP_URL) return process.env.APP_URL;
+  // Fallback for Vercel
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  // Default fallback to registered domain
+  return `https://opus-authoring.vercel.app`;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -2403,13 +2412,15 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
       const state = nanoid();
       const nonce = nanoid();
       
-      // Store state/nonce in session or cookie if needed (simplified for now)
+      // Store state/nonce in DB for verification during launch
+      await storage.createLtiState(state, nonce);
       
+      const appUrl = getAppUrl(req);
       const authUrl = new URL(platform.authLoginUrl);
       authUrl.searchParams.append("scope", "openid");
       authUrl.searchParams.append("response_type", "id_token");
       authUrl.searchParams.append("client_id", platform.clientId);
-      authUrl.searchParams.append("redirect_uri", `${req.protocol}://${req.get('host')}/api/lti/launch`);
+      authUrl.searchParams.append("redirect_uri", `${appUrl}/api/lti/launch`);
       authUrl.searchParams.append("login_hint", login_hint as string);
       authUrl.searchParams.append("state", state);
       authUrl.searchParams.append("nonce", nonce);
@@ -2432,9 +2443,16 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
     try {
       const { id_token, state } = req.body;
       
-      if (!id_token) {
-        console.error("LTI Launch error: Missing id_token");
-        return res.status(400).send("Missing id_token");
+      if (!id_token || !state) {
+        console.error("LTI Launch error: Missing parameters", { hasToken: !!id_token, hasState: !!state });
+        return res.status(400).send("Missing id_token or state");
+      }
+
+      // Verify state and get nonce
+      const stateData = await storage.verifyLtiState(state);
+      if (!stateData) {
+        console.error("LTI Launch error: Invalid or expired state");
+        return res.status(400).send("Invalid or expired LTI state (session timeout)");
       }
 
       // Decode token to get issuer and kid
@@ -2451,12 +2469,18 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
         return res.status(404).send("LTI Platform not found. Please ensure the tool is registered in both Moodle and this application.");
       }
 
-      // Verify signature
+      // Verify signature and nonce
       const JWKS = jose.createRemoteJWKSet(new URL(platform.keysetUrl));
       const { payload: verifiedPayload } = await jose.jwtVerify(id_token, JWKS, {
         issuer: platform.issuer,
         audience: platform.clientId,
       });
+
+      // Verify nonce
+      if (verifiedPayload.nonce !== stateData.nonce) {
+        console.error("LTI Launch error: Nonce mismatch");
+        return res.status(400).send("LTI Security verification failed: Nonce mismatch");
+      }
 
       console.log("LTI Launch verified successfully");
 
@@ -2476,10 +2500,9 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
         return res.status(400).send("Could not determine course ID from launch. Please set 'course_id=...' in Custom Parameters in Moodle.");
       }
 
+      const appUrl = getAppUrl(req);
       console.log(`Redirecting to course: /courses/${courseId}`);
-      // Use a full URL for the redirect to be safe
-      const redirectUrl = `${req.protocol}://${req.get('host')}/courses/${courseId}`;
-      res.redirect(redirectUrl);
+      res.redirect(`${appUrl}/courses/${courseId}`);
     } catch (error) {
       console.error("LTI Launch failed:", error);
       res.status(500).send("LTI Launch verification failed: " + (error instanceof Error ? error.message : String(error)));

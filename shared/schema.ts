@@ -49,6 +49,14 @@ export const ltiPlatforms = pgTable("lti_platforms", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const ltiStates = pgTable("lti_states", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  state: text("state").notNull().unique(),
+  nonce: text("nonce").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const courses = pgTable("courses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),

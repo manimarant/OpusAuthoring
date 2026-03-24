@@ -10,6 +10,7 @@ import {
   quizQuestions,
   blockTemplates,
   ltiPlatforms,
+  ltiStates,
   type User, 
   type InsertUser, 
   type LtiPlatform,
@@ -36,7 +37,7 @@ import {
   type ModuleWithContent
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, lt } from "drizzle-orm";
 import type { CourseWithProgress } from "@shared/schema";
 
 export interface IStorage {
@@ -116,6 +117,10 @@ export interface IStorage {
   getLtiPlatformByIssuer(issuer: string, clientId: string): Promise<LtiPlatform | undefined>;
   createLtiPlatform(platform: InsertLtiPlatform): Promise<LtiPlatform>;
   updateLtiPlatform(id: string, platform: Partial<InsertLtiPlatform>): Promise<LtiPlatform | undefined>;
+
+  // LTI States
+  createLtiState(state: string, nonce: string): Promise<void>;
+  verifyLtiState(state: string): Promise<{ nonce: string } | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -735,6 +740,36 @@ export class DatabaseStorage implements IStorage {
       .where(eq(ltiPlatforms.id, id))
       .returning();
     return platform || undefined;
+  }
+
+  // LTI States
+  async createLtiState(state: string, nonce: string): Promise<void> {
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15); // State expires in 15 minutes
+
+    await db
+      .insert(ltiStates)
+      .values({
+        state,
+        nonce,
+        expiresAt
+      });
+  }
+
+  async verifyLtiState(state: string): Promise<{ nonce: string } | undefined> {
+    const [ltiState] = await db
+      .select()
+      .from(ltiStates)
+      .where(and(eq(ltiStates.state, state), sql`${ltiStates.expiresAt} > NOW()`));
+
+    if (!ltiState) {
+      return undefined;
+    }
+
+    // Delete used state to prevent replay attacks
+    await db.delete(ltiStates).where(eq(ltiStates.id, ltiState.id));
+    
+    return { nonce: ltiState.nonce };
   }
 }
 
