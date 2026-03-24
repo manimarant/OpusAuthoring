@@ -9,8 +9,11 @@ import {
   questionBanks,
   quizQuestions,
   blockTemplates,
+  ltiPlatforms,
   type User, 
   type InsertUser, 
+  type LtiPlatform,
+  type InsertLtiPlatform,
   type Course, 
   type InsertCourse, 
   type Module, 
@@ -107,6 +110,12 @@ export interface IStorage {
   createBlockTemplate(template: InsertBlockTemplate): Promise<BlockTemplate>;
   updateBlockTemplate(id: string, template: Partial<InsertBlockTemplate>): Promise<BlockTemplate | undefined>;
   deleteBlockTemplate(id: string): Promise<boolean>;
+
+  // LTI Platforms
+  getLtiPlatform(id: string): Promise<LtiPlatform | undefined>;
+  getLtiPlatformByIssuer(issuer: string, clientId: string): Promise<LtiPlatform | undefined>;
+  createLtiPlatform(platform: InsertLtiPlatform): Promise<LtiPlatform>;
+  updateLtiPlatform(id: string, platform: Partial<InsertLtiPlatform>): Promise<LtiPlatform | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -692,6 +701,40 @@ export class DatabaseStorage implements IStorage {
   async deleteBlockTemplate(id: string): Promise<boolean> {
     const result = await db.delete(blockTemplates).where(eq(blockTemplates.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // LTI Platforms
+  async getLtiPlatform(id: string): Promise<LtiPlatform | undefined> {
+    const [platform] = await db.select().from(ltiPlatforms).where(eq(ltiPlatforms.id, id));
+    return platform || undefined;
+  }
+
+  async getLtiPlatformByIssuer(issuer: string, clientId: string): Promise<LtiPlatform | undefined> {
+    const [platform] = await db
+      .select()
+      .from(ltiPlatforms)
+      .where(and(eq(ltiPlatforms.issuer, issuer), eq(ltiPlatforms.clientId, clientId)));
+    return platform || undefined;
+  }
+
+  async createLtiPlatform(insertPlatform: InsertLtiPlatform): Promise<LtiPlatform> {
+    const [platform] = await db
+      .insert(ltiPlatforms)
+      .values(insertPlatform)
+      .returning();
+    return platform;
+  }
+
+  async updateLtiPlatform(id: string, updates: Partial<InsertLtiPlatform>): Promise<LtiPlatform | undefined> {
+    const [platform] = await db
+      .update(ltiPlatforms)
+      .set({
+        ...updates,
+        updatedAt: new Date()
+      })
+      .where(eq(ltiPlatforms.id, id))
+      .returning();
+    return platform || undefined;
   }
 }
 

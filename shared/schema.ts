@@ -34,6 +34,21 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+export const ltiPlatforms = pgTable("lti_platforms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  issuer: text("issuer").notNull(),
+  clientId: text("client_id").notNull(),
+  deploymentId: text("deployment_id").notNull(),
+  authLoginUrl: text("auth_login_url").notNull(),
+  authTokenUrl: text("auth_token_url"),
+  keysetUrl: text("keyset_url").notNull(),
+  publicKey: text("public_key").notNull(),
+  privateKey: text("private_key").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const courses = pgTable("courses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
@@ -255,9 +270,17 @@ export const insertBlockTemplateSchema = createInsertSchema(blockTemplates).omit
   updatedAt: true,
 });
 
+export const insertLtiPlatformSchema = createInsertSchema(ltiPlatforms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type InsertLtiPlatform = z.infer<typeof insertLtiPlatformSchema>;
+export type LtiPlatform = typeof ltiPlatforms.$inferSelect;
 export type InsertCourse = z.infer<typeof insertCourseSchema>;
 export type Course = typeof courses.$inferSelect;
 export type CourseWithProgress = Course & {

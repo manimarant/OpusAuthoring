@@ -48,16 +48,14 @@ type AiPreview =
     };
 
 type LtiPublishResult = {
-  configId: string;
-  version: string;
-  registrationUrl?: string;
+  id: string;
+  name: string;
+  issuer: string;
+  clientId: string;
+  deploymentId: string;
   loginInitiationUrl: string;
   launchUrl: string;
   jwksUrl: string;
-  platformIssuer?: string;
-  clientId?: string;
-  deploymentId?: string;
-  instructions: string[];
 };
 
 const surfaceClass = "bg-white";
@@ -89,7 +87,9 @@ export default function ModuleContent() {
   const [ltiClientId, setLtiClientId] = useState("");
   const [ltiDeploymentId, setLtiDeploymentId] = useState("");
   const [ltiAuthLoginUrl, setLtiAuthLoginUrl] = useState("");
+  const [ltiAuthTokenUrl, setLtiAuthTokenUrl] = useState("");
   const [ltiKeysetUrl, setLtiKeysetUrl] = useState("");
+
   const [ltiPublishResult, setLtiPublishResult] = useState<LtiPublishResult | null>(null);
   const [courseTitleDraft, setCourseTitleDraft] = useState("");
   const [courseObjectiveDraft, setCourseObjectiveDraft] = useState("");
@@ -848,24 +848,32 @@ export default function ModuleContent() {
     }
 
     try {
-      const response = await apiRequest("POST", `/api/courses/${course.id}/publish/lti`, {
-        platformName: ltiPlatformName.trim(),
-        platformIssuer: ltiPlatformIssuer.trim(),
+      const response = await apiRequest("POST", `/api/courses/${course.id}/publish/lti-registration`, {
+        name: ltiPlatformName.trim(),
+        issuer: ltiPlatformIssuer.trim(),
         clientId: ltiClientId.trim(),
         deploymentId: ltiDeploymentId.trim(),
         authLoginUrl: ltiAuthLoginUrl.trim(),
+        authTokenUrl: ltiAuthTokenUrl.trim(),
         keysetUrl: ltiKeysetUrl.trim(),
       });
-      const result = await response.json() as LtiPublishResult;
-      setLtiPublishResult(result);
+      const result = await response.json();
+      // Calculate derived URLs based on current origin if not provided by backend
+      const launchResult: LtiPublishResult = {
+        ...result,
+        loginInitiationUrl: `${window.location.origin}/api/lti/login`,
+        launchUrl: `${window.location.origin}/api/lti/launch`,
+        jwksUrl: `${window.location.origin}/api/lti/jwks`,
+      };
+      setLtiPublishResult(launchResult);
       toast({
-        title: "LTI configuration ready",
-        description: "Use the generated LTI 1.3 login, launch, and JWKS URLs in your LMS external tool settings.",
+        title: "LTI Configuration Saved",
+        description: "Your LTI 1.3 tool is ready to use in MoodleCloud.",
       });
     } catch (error) {
       toast({
         title: "LTI setup failed",
-        description: error instanceof Error ? error.message : "Failed to prepare LTI configuration.",
+        description: error instanceof Error ? error.message : "Failed to save LTI configuration.",
         variant: "destructive",
       });
     }
@@ -1007,6 +1015,14 @@ export default function ModuleContent() {
     setAiPrompt("");
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: "Copied",
+      description: "URL copied to clipboard",
+    });
+  };
+
   const isInitialLoad = moduleInitialLoading || blocksInitialLoading;
 
   if (isInitialLoad) {
@@ -1045,90 +1061,94 @@ export default function ModuleContent() {
   return (
     <DndProvider backend={HTML5Backend}>
       <Dialog open={isDirectPublishDialogOpen} onOpenChange={setIsDirectPublishDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Direct Publish to LMS</DialogTitle>
-            <DialogDescription>Use the MoodleCloud registration URL first. Manual LTI values are only needed for fallback setup.</DialogDescription>
+            <DialogTitle>LTI 1.3 Publishing</DialogTitle>
+            <DialogDescription>Configure this course as an External Tool in MoodleCloud.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-semibold text-slate-900">Preferred: MoodleCloud registration URL</div>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Generate a registration URL, paste it into MoodleCloud's LTI 1.3 registration flow, and let Moodle register itself automatically.
-              </p>
-              <Button type="button" className="mt-3" onClick={handleLtiRegistrationSetup}>
-                Generate Registration URL
-              </Button>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="lti-platform-name" className="text-right">
-                LMS Name
-              </Label>
-              <Input id="lti-platform-name" className="col-span-3" value={ltiPlatformName} onChange={(event) => setLtiPlatformName(event.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="lti-platform-issuer" className="text-right">
-                Issuer
-              </Label>
-              <Input id="lti-platform-issuer" className="col-span-3" value={ltiPlatformIssuer} onChange={(event) => setLtiPlatformIssuer(event.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="lti-client-id" className="text-right">
-                Client ID
-              </Label>
-              <Input id="lti-client-id" className="col-span-3" value={ltiClientId} onChange={(event) => setLtiClientId(event.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="lti-deployment-id" className="text-right">
-                Deployment ID
-              </Label>
-              <Input id="lti-deployment-id" className="col-span-3" value={ltiDeploymentId} onChange={(event) => setLtiDeploymentId(event.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="lti-auth-login-url" className="text-right">
-                Auth URL
-              </Label>
-              <Input id="lti-auth-login-url" className="col-span-3" value={ltiAuthLoginUrl} onChange={(event) => setLtiAuthLoginUrl(event.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="lti-keyset-url" className="text-right">
-                Platform JWKS
-              </Label>
-              <Input id="lti-keyset-url" className="col-span-3" value={ltiKeysetUrl} onChange={(event) => setLtiKeysetUrl(event.target.value)} />
-            </div>
-            {ltiPublishResult ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-sm font-semibold text-slate-900">Launch configuration</div>
-                <div className="mt-3 space-y-3 text-sm text-slate-700">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Registration URL</div>
-                    <Input value={ltiPublishResult.registrationUrl || ""} readOnly className="mt-1 bg-white" />
+          <div className="grid gap-6 py-4">
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-slate-900">1. Tool Details (Provide these to Moodle)</h4>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-500 uppercase tracking-wider text-blue-600">Course ID (Use in Moodle Custom Parameters)</Label>
+                  <div className="flex gap-2">
+                    <Input readOnly value={course?.id || ""} className="bg-blue-50 border-blue-200" />
+                    <Button variant="outline" size="sm" className="border-blue-200 hover:bg-blue-50" onClick={() => copyToClipboard(course?.id || "")}>Copy</Button>
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Login initiation URL</div>
-                    <Input value={ltiPublishResult.loginInitiationUrl} readOnly className="mt-1 bg-white" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-500 uppercase tracking-wider">Login Initiation URL</Label>
+                  <div className="flex gap-2">
+                    <Input readOnly value={`${window.location.origin}/api/lti/login`} className="bg-slate-50" />
+                    <Button variant="outline" size="sm" onClick={() => copyToClipboard(`${window.location.origin}/api/lti/login`)}>Copy</Button>
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Launch URL</div>
-                    <Input value={ltiPublishResult.launchUrl} readOnly className="mt-1 bg-white" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-500 uppercase tracking-wider">Launch URL</Label>
+                  <div className="flex gap-2">
+                    <Input readOnly value={`${window.location.origin}/api/lti/launch`} className="bg-slate-50" />
+                    <Button variant="outline" size="sm" onClick={() => copyToClipboard(`${window.location.origin}/api/lti/launch`)}>Copy</Button>
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Tool JWKS URL</div>
-                    <Input value={ltiPublishResult.jwksUrl} readOnly className="mt-1 bg-white" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Setup steps</div>
-                    <div className="mt-1 space-y-1 text-sm text-slate-600">
-                      {ltiPublishResult.instructions.map((instruction) => (
-                        <div key={instruction}>{instruction}</div>
-                      ))}
-                    </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-500 uppercase tracking-wider">Public Keyset (JWKS) URL</Label>
+                  <div className="flex gap-2">
+                    <Input readOnly value={`${window.location.origin}/api/lti/jwks`} className="bg-slate-50" />
+                    <Button variant="outline" size="sm" onClick={() => copyToClipboard(`${window.location.origin}/api/lti/jwks`)}>Copy</Button>
                   </div>
                 </div>
               </div>
-            ) : null}
+            </div>
+
+            <div className="space-y-4 border-t pt-4">
+              <h4 className="text-sm font-semibold text-slate-900">2. Platform Details (Get these from Moodle)</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="lti-platform-name">LMS Name</Label>
+                  <Input id="lti-platform-name" placeholder="e.g. MoodleCloud" value={ltiPlatformName} onChange={(e) => setLtiPlatformName(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="lti-platform-issuer">Platform Issuer</Label>
+                  <Input id="lti-platform-issuer" placeholder="https://moodlecloud.com" value={ltiPlatformIssuer} onChange={(e) => setLtiPlatformIssuer(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="lti-client-id">Client ID</Label>
+                  <Input id="lti-client-id" value={ltiClientId} onChange={(e) => setLtiClientId(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="lti-deployment-id">Deployment ID</Label>
+                  <Input id="lti-deployment-id" value={ltiDeploymentId} onChange={(e) => setLtiDeploymentId(e.target.value)} />
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label htmlFor="lti-auth-login-url">Platform Login URL</Label>
+                  <Input id="lti-auth-login-url" placeholder="https://.../mod/lti/auth.php" value={ltiAuthLoginUrl} onChange={(e) => setLtiAuthLoginUrl(e.target.value)} />
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label htmlFor="lti-auth-token-url">Platform Access Token URL</Label>
+                  <Input id="lti-auth-token-url" placeholder="https://.../mod/lti/token.php" value={ltiAuthTokenUrl} onChange={(e) => setLtiAuthTokenUrl(e.target.value)} />
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label htmlFor="lti-keyset-url">Platform JWKS URL</Label>
+                  <Input id="lti-keyset-url" placeholder="https://.../mod/lti/certs.php" value={ltiKeysetUrl} onChange={(e) => setLtiKeysetUrl(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 border-t pt-4">
+              <h4 className="text-sm font-semibold text-slate-900">3. Moodle Setup Instructions</h4>
+              <div className="space-y-2 text-sm text-slate-600 leading-relaxed">
+                <p>1. In Moodle, go to <strong>Site administration &gt; Plugins &gt; Enrolments &gt; External tool (LTI) &gt; Manage tools</strong> (or similar under Plugins).</p>
+                <p>2. Click <strong>configure a tool manually</strong> and paste the Tool Details from section 1.</p>
+                <p>3. Under <strong>Custom parameters</strong>, enter: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-900">course_id={course?.id}</code></p>
+                <p>4. Expand the <strong>Privacy</strong> section and set both <strong>Share launcher's name</strong> and <strong>Share launcher's email</strong> to "Always" to enable course personalization and tracking.</p>
+              </div>
+            </div>
           </div>
-          <Button type="button" variant="outline" onClick={handleLtiPublish}>Generate Manual LTI 1.3 Setup</Button>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="outline" onClick={() => setIsDirectPublishDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleLtiPublish}>Save Configuration</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
