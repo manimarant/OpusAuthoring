@@ -2441,7 +2441,7 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
         authUrl.searchParams.append("lti_message_hint", lti_message_hint as string);
       }
 
-      res.redirect(authUrl.toString());
+      res.redirect(303, authUrl.toString());
     } catch (error) {
       console.error("LTI OIDC Login failed:", error);
       res.status(500).send("Internal Server Error during LTI Login");
@@ -2522,10 +2522,10 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
         const targetModuleId = childModules.length > 0 ? childModules[0].id : firstModule.id;
         
         console.log(`Redirecting to module content: /module/${targetModuleId}/content`);
-        res.redirect(`${appUrl}/module/${targetModuleId}/content`);
+        res.redirect(303, `${appUrl}/module/${targetModuleId}/content`);
       } else {
         console.log(`No modules found, redirecting to course setup: /course-setup?id=${courseId}`);
-        res.redirect(`${appUrl}/course-setup?id=${courseId}`);
+        res.redirect(303, `${appUrl}/course-setup?id=${courseId}`);
       }
     } catch (error) {
       console.error("LTI Launch failed:", error);
