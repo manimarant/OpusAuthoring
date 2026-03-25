@@ -714,12 +714,25 @@ export class DatabaseStorage implements IStorage {
     return platform || undefined;
   }
 
-  async getLtiPlatformByIssuer(issuer: string, clientId: string): Promise<LtiPlatform | undefined> {
-    const [platform] = await db
-      .select()
-      .from(ltiPlatforms)
-      .where(and(eq(ltiPlatforms.issuer, issuer), eq(ltiPlatforms.clientId, clientId)));
-    return platform || undefined;
+  async getLtiPlatformByIssuer(issuer: string, clientId?: string): Promise<LtiPlatform | undefined> {
+    if (clientId) {
+      const [platform] = await db
+        .select()
+        .from(ltiPlatforms)
+        .where(and(eq(ltiPlatforms.issuer, issuer), eq(ltiPlatforms.clientId, clientId)));
+      return platform || undefined;
+    } else {
+      const platforms = await db
+        .select()
+        .from(ltiPlatforms)
+        .where(eq(ltiPlatforms.issuer, issuer));
+      
+      // If only one platform for this issuer, return it even if clientId wasn't provided
+      if (platforms.length === 1) {
+        return platforms[0];
+      }
+      return undefined;
+    }
   }
 
   async createLtiPlatform(insertPlatform: InsertLtiPlatform): Promise<LtiPlatform> {

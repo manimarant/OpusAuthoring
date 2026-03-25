@@ -182,6 +182,14 @@ async function generateElevenLabsAudio(text: string): Promise<{ audioUrl: string
 
 function getAppUrl(req: express.Request): string {
   if (process.env.APP_URL) return process.env.APP_URL;
+  
+  // Try to determine from request headers (standard way for proxies like Vercel)
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.get('host');
+  if (host) {
+    return `${protocol}://${host}`;
+  }
+
   // Fallback for Vercel
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   // Default fallback to registered domain
@@ -2427,6 +2435,7 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
       authUrl.searchParams.append("nonce", nonce);
       authUrl.searchParams.append("prompt", "none");
       authUrl.searchParams.append("response_mode", "form_post");
+      authUrl.searchParams.append("target_link_uri", target_link_uri as string);
       
       if (lti_message_hint) {
         authUrl.searchParams.append("lti_message_hint", lti_message_hint as string);
@@ -2513,22 +2522,13 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
   // JWKS endpoint for public keys
   app.get(["/api/lti/jwks", "/api/lti/jwks/"], async (req, res) => {
     try {
-      // In a real app, you'd store multiple keys and rotate them
-      // For this demo, we'll fetch a platform's public key or have a global one
-      // Let's implement a global tool key pair if needed, but for now we'll fetch from storage
-      // To simplify, let's assume we use the first platform's keys or a specific query param
-      
-      // Let's try to find any platform to serve a JWKS
-      // Actually, a tool usually has ONE JWKS endpoint for all platforms
-      // So we should have a global tool key pair
-      
-      const platforms = await db.select().from(ltiPlatforms).limit(1);
+      const platforms = await db.select().from(ltiPlatforms);
       if (platforms.length === 0) {
         return res.json({ keys: [] });
       }
       
-      const publicKey = JSON.parse(platforms[0].publicKey);
-      res.json({ keys: [publicKey] });
+      const keys = platforms.map(p => JSON.parse(p.publicKey));
+      res.json({ keys });
     } catch (error) {
       res.status(500).json({ message: "Failed to serve JWKS" });
     }
