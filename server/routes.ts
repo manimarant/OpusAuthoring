@@ -2449,9 +2449,9 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
   });
 
   // LTI 1.3 Launch endpoint
-  app.post(["/api/lti/launch", "/api/lti/launch/"], async (req, res) => {
+  app.all(["/api/lti/launch", "/api/lti/launch/"], async (req, res) => {
     try {
-      const { id_token, state } = req.body;
+      const { id_token, state } = { ...req.query, ...req.body };
       
       if (!id_token || !state) {
         console.error("LTI Launch error: Missing parameters", { hasToken: !!id_token, hasState: !!state });
@@ -2510,9 +2510,23 @@ app.post("/api/modules/:moduleId/generate-complete-video", async (req, res) => {
         return res.status(400).send("Could not determine course ID from launch. Please set 'course_id=...' in Custom Parameters in Moodle.");
       }
 
+      // Find the first module to redirect to
+      const modules = await storage.getModulesByCourseId(courseId);
       const appUrl = getAppUrl(req);
-      console.log(`Redirecting to course: /courses/${courseId}`);
-      res.redirect(`${appUrl}/courses/${courseId}`);
+
+      if (modules && modules.length > 0) {
+        // If it's a chapter-based course, we might want the first child module
+        const firstModule = modules[0];
+        // Try to find a child if it's a parent module
+        const childModules = modules.filter(m => m.parentModuleId === firstModule.id);
+        const targetModuleId = childModules.length > 0 ? childModules[0].id : firstModule.id;
+        
+        console.log(`Redirecting to module content: /module/${targetModuleId}/content`);
+        res.redirect(`${appUrl}/module/${targetModuleId}/content`);
+      } else {
+        console.log(`No modules found, redirecting to course setup: /course-setup?id=${courseId}`);
+        res.redirect(`${appUrl}/course-setup?id=${courseId}`);
+      }
     } catch (error) {
       console.error("LTI Launch failed:", error);
       res.status(500).send("LTI Launch verification failed: " + (error instanceof Error ? error.message : String(error)));
