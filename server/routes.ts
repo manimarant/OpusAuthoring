@@ -356,9 +356,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       req.session.userId = user.id;
+      return req.session.save((error) => {
+        if (error) {
+          return res.status(500).json({ message: "Failed to persist login session" });
+        }
 
-      return res.json({
-        user: toAuthUser(user),
+        return res.json({
+          user: toAuthUser(user),
+        });
       });
     } catch (error) {
       return res.status(500).json({ message: "Login failed" });

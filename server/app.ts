@@ -1,10 +1,12 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import dotenv from "dotenv";
+import connectPgSimple from "connect-pg-simple";
 import session from "express-session";
 import fs from "fs";
 import createMemoryStore from "memorystore";
 import path from "path";
 import { fileURLToPath } from "url";
+import { pool } from "./db";
 
 dotenv.config();
 
@@ -42,6 +44,17 @@ export function createApp() {
 
   const app = express();
   const MemoryStore = createMemoryStore(session);
+  const PgSessionStore = connectPgSimple(session);
+  const isProduction = app.get("env") === "production";
+  const store = isProduction
+    ? new PgSessionStore({
+        pool,
+        tableName: "user_sessions",
+        createTableIfMissing: true,
+      })
+    : new MemoryStore({
+        checkPeriod: 1000 * 60 * 60 * 24,
+      });
 
   app.set("trust proxy", 1);
   app.use(
@@ -50,15 +63,14 @@ export function createApp() {
       secret: process.env.SESSION_SECRET || "opuslearn-development-session-secret",
       resave: false,
       saveUninitialized: false,
+      proxy: true,
       cookie: {
         httpOnly: true,
         sameSite: "lax",
-        secure: app.get("env") === "production",
+        secure: isProduction,
         maxAge: 1000 * 60 * 60 * 24 * 7,
       },
-      store: new MemoryStore({
-        checkPeriod: 1000 * 60 * 60 * 24,
-      }),
+      store,
     }),
   );
   
