@@ -102,6 +102,12 @@ export function checkRateLimit(identifier: string): { allowed: boolean; retryAft
   return { allowed: true };
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 function buildSystemPrompt(request: AiGenerateTextRequest, courseContext?: { title: string; topic: string; objectives: string }): string {
   const { type, style, length, currentText } = request;
   
@@ -1367,7 +1373,7 @@ Video Content: ${request.prompt}`;
     });
     
     if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
+      const errorData = asRecord(await response.json().catch(() => null));
       console.error("Tavus API Error:", errorData);
       
       if (response.status === 401) {
@@ -1377,12 +1383,16 @@ Video Content: ${request.prompt}`;
       } else if (response.status === 429) {
         throw new Error("Rate limit exceeded for Tavus API");
       } else {
-        throw new Error(`Tavus API error: ${response.status} - ${errorData?.message || 'Unknown error'}`);
+        const errorMessage =
+          typeof errorData.message === "string" && errorData.message.trim()
+            ? errorData.message
+            : "Unknown error";
+        throw new Error(`Tavus API error: ${response.status} - ${errorMessage}`);
       }
     }
     
-    const data = await response.json();
-    const videoId = data.video_id;
+    const data = asRecord(await response.json());
+    const videoId = typeof data.video_id === "string" ? data.video_id : "";
     
     if (!videoId) {
       throw new Error("No video ID returned from Tavus API");
@@ -1410,10 +1420,15 @@ Video Content: ${request.prompt}`;
           continue;
         }
         
-        const statusData = await statusResponse.json();
+        const statusData: any = asRecord(await statusResponse.json());
+        const status = typeof statusData.status === "string" ? statusData.status : "pending";
+        const downloadUrl = typeof statusData.download_url === "string" ? statusData.download_url : "";
+        const hostedUrl = typeof statusData.hosted_url === "string" ? statusData.hosted_url : "";
+        const statusDetails = typeof statusData.status_details === "string" ? statusData.status_details : "";
+        const errorMessage = typeof statusData.error_message === "string" ? statusData.error_message : "";
         
-        if (statusData.status === 'ready') {
-          const videoUrl = statusData.download_url || statusData.hosted_url;
+        if (status === 'ready') {
+          const videoUrl = downloadUrl || hostedUrl;
           if (!videoUrl) {
             throw new Error("No video URL in completed response from Tavus API");
           }
@@ -1427,8 +1442,8 @@ Video Content: ${request.prompt}`;
             status: 'completed',
             isAIGenerated: true
           };
-        } else if (statusData.status === 'error') {
-          throw new Error(`Tavus video generation failed: ${statusData.status_details || statusData.error_message || 'Unknown error'}`);
+        } else if (status === 'error') {
+          throw new Error(`Tavus video generation failed: ${statusDetails || errorMessage || 'Unknown error'}`);
         }
         
         // Status is still pending, continue polling.

@@ -1,9 +1,41 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+async function readErrorMessage(res: Response) {
+  const contentType = res.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      const data = await res.json();
+      if (typeof data?.message === "string" && data.message.trim()) {
+        return data.message;
+      }
+      return JSON.stringify(data);
+    } catch {
+      return res.statusText;
+    }
+  }
+
+  const text = (await res.text()).trim();
+  return text || res.statusText;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const message = await readErrorMessage(res);
+    throw new Error(`${res.status}: ${message}`);
+  }
+}
+
+export async function readJsonResponse<T>(res: Response): Promise<T> {
+  const text = (await res.text()).trim();
+  if (!text) {
+    throw new Error("The server returned an empty response.");
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("The server returned an invalid response.");
   }
 }
 
@@ -28,11 +60,12 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+export function getQueryFn<T>(options: { on401: "returnNull" }): QueryFunction<T | null>;
+export function getQueryFn<T>(options: { on401: "throw" }): QueryFunction<T>;
+export function getQueryFn<T>(options: { on401: UnauthorizedBehavior }) {
+  const { on401: unauthorizedBehavior } = options;
+
+  return async ({ queryKey }: Parameters<QueryFunction<T | null>>[0]) => {
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
     });
@@ -42,8 +75,9 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    return await readJsonResponse(res);
   };
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {

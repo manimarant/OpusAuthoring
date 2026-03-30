@@ -1,6 +1,8 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import dotenv from "dotenv";
+import session from "express-session";
 import fs from "fs";
+import createMemoryStore from "memorystore";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -39,6 +41,26 @@ export function createApp() {
   ensureUploadsDir();
 
   const app = express();
+  const MemoryStore = createMemoryStore(session);
+
+  app.set("trust proxy", 1);
+  app.use(
+    session({
+      name: "opuslearn.sid",
+      secret: process.env.SESSION_SECRET || "opuslearn-development-session-secret",
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: app.get("env") === "production",
+        maxAge: 1000 * 60 * 60 * 24 * 7,
+      },
+      store: new MemoryStore({
+        checkPeriod: 1000 * 60 * 60 * 24,
+      }),
+    }),
+  );
   
   // Basic parsers for non-upload routes
   const jsonParser = express.json({ limit: "15mb" });

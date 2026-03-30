@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { GraduationCap, ChartLine, Trash2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +19,7 @@ import { useState, useEffect, useRef } from "react";
 
 export default function MyCourses() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [courseToDelete, setCourseToDelete] = useState<CourseWithProgress | null>(null);
   const coverGenerationInFlightRef = useRef<Set<string>>(new Set());
   
@@ -53,6 +54,48 @@ export default function MyCourses() {
       toast({
         title: "Error",
         description: "Failed to delete the course. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const repairLaunchMutation = useMutation({
+    mutationFn: async (course: CourseWithProgress) => {
+      const endpoint = course.referenceFileCount && course.referenceFileCount > 0
+        ? `/api/courses/${course.id}/generate-outline-from-files`
+        : `/api/courses/${course.id}/generate-outline`;
+      const response = await apiRequest("POST", endpoint);
+      const payload = await response.json();
+      return { course, payload };
+    },
+    onSuccess: async ({ payload }) => {
+      const modules = Array.isArray(payload?.modules) ? payload.modules : [];
+      const topLevelModules = modules
+        .filter((module: any) => !module.parentModuleId)
+        .sort((a: any, b: any) => parseInt(a.order) - parseInt(b.order));
+      const firstParentModule = topLevelModules[0];
+      const firstChapterModule = modules
+        .filter((module: any) => module.parentModuleId === firstParentModule?.id)
+        .sort((a: any, b: any) => parseInt(a.order) - parseInt(b.order))[0];
+      const launchModule = firstChapterModule || firstParentModule;
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/courses"] });
+
+      if (!launchModule?.id) {
+        toast({
+          title: "Launch unavailable",
+          description: "The course outline was generated, but no launchable lesson was created.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setLocation(`/module/${launchModule.id}/content`);
+    },
+    onError: (error) => {
+      toast({
+        title: "Launch failed",
+        description: error instanceof Error ? error.message : "Failed to prepare this course for launch.",
         variant: "destructive",
       });
     },
@@ -126,6 +169,74 @@ export default function MyCourses() {
                 ? `/module/${course.firstModuleId}/content/${course.firstContentBlockId}`
                 : `/module/${course.firstModuleId}/content`
               : `/my-courses`;
+            const requiresRepair = !course.firstModuleId;
+            const isRepairingCourse = repairLaunchMutation.isPending && repairLaunchMutation.variables?.id === course.id;
+            const cardClassName = "flex h-full min-h-[332px] w-full flex-col overflow-hidden rounded-[22px] border border-slate-200/80 bg-white text-left shadow-[0_12px_32px_rgba(15,23,42,0.07)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_38px_rgba(15,23,42,0.1)] dark:border-white/10 dark:bg-zinc-950 dark:shadow-[0_16px_36px_rgba(0,0,0,0.26)]";
+            const cardContent = (
+              <>
+                <div className="relative aspect-[5/3] overflow-hidden bg-[linear-gradient(160deg,#eef4ff_0%,#f8fafc_52%,#ffffff_100%)] dark:bg-[linear-gradient(160deg,#111827_0%,#0f172a_52%,#020617_100%)]">
+                  {course.coverImage ? (
+                    <img
+                      src={course.coverImage}
+                      alt={course.title}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      {index % 2 === 0 ? (
+                        <GraduationCap className="h-12 w-12 text-slate-500 dark:text-slate-300" strokeWidth={1.5} />
+                      ) : (
+                        <ChartLine className="h-12 w-12 text-slate-500 dark:text-slate-300" strokeWidth={1.5} />
+                      )}
+                    </div>
+                  )}
+                  <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/22 via-black/8 to-transparent" />
+                  <div className="absolute left-3 top-3">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                        course.status === "published"
+                          ? "bg-emerald-500/90 text-white"
+                          : "bg-white/88 text-slate-700 backdrop-blur-sm dark:bg-black/55 dark:text-slate-100"
+                      }`}
+                      data-testid={`status-course-${course.id}`}
+                    >
+                      {course.status === "published" ? "Published" : "Draft"}
+                    </span>
+                  </div>
+                  {requiresRepair && (
+                    <div className="absolute bottom-3 left-3">
+                      <span className="inline-flex items-center rounded-full bg-slate-900/78 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur-sm dark:bg-white/14">
+                        {isRepairingCourse ? "Preparing" : "Generate Outline"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-1 flex-col justify-between px-6 pb-6 pt-5">
+                  <div className="space-y-2.5">
+                    <h3
+                      className="min-h-[69px] line-clamp-3 text-[17px] font-semibold leading-[1.35] tracking-[-0.02em] text-slate-900 dark:text-slate-50"
+                      data-testid={`text-course-title-${course.id}`}
+                    >
+                      {course.title}
+                    </h3>
+                    <p
+                      className="line-clamp-3 min-h-[66px] text-[13px] leading-5 text-slate-500 dark:text-slate-400"
+                      data-testid={`text-course-audience-${course.id}`}
+                    >
+                      {course.targetAudience ? `For ${course.targetAudience}` : "Audience details to be defined"}
+                    </p>
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-between border-t border-slate-200/80 pt-3 text-[12px] text-slate-500 dark:border-white/10 dark:text-slate-400">
+                    <span className="uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">Updated</span>
+                    <span data-testid={`text-course-updated-${course.id}`}>
+                      {new Date(course.updatedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              </>
+            );
 
             return (
               <div
@@ -133,65 +244,23 @@ export default function MyCourses() {
                 className="group relative mx-auto w-full max-w-[248px]"
                 data-testid={`card-course-${course.id}`}
               >
-                <Link
-                  href={launchUrl}
-                  className="flex h-full min-h-[332px] flex-col overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.07)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_38px_rgba(15,23,42,0.1)] dark:border-white/10 dark:bg-zinc-950 dark:shadow-[0_16px_36px_rgba(0,0,0,0.26)]"
-                >
-                  <div className="relative aspect-[5/3] overflow-hidden bg-[linear-gradient(160deg,#eef4ff_0%,#f8fafc_52%,#ffffff_100%)] dark:bg-[linear-gradient(160deg,#111827_0%,#0f172a_52%,#020617_100%)]">
-                    {course.coverImage ? (
-                      <img
-                        src={course.coverImage}
-                        alt={course.title}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        {index % 2 === 0 ? (
-                          <GraduationCap className="h-12 w-12 text-slate-500 dark:text-slate-300" strokeWidth={1.5} />
-                        ) : (
-                          <ChartLine className="h-12 w-12 text-slate-500 dark:text-slate-300" strokeWidth={1.5} />
-                        )}
-                      </div>
-                    )}
-                    <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/22 via-black/8 to-transparent" />
-                    <div className="absolute left-3 top-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
-                          course.status === "published"
-                            ? "bg-emerald-500/90 text-white"
-                            : "bg-white/88 text-slate-700 backdrop-blur-sm dark:bg-black/55 dark:text-slate-100"
-                        }`}
-                        data-testid={`status-course-${course.id}`}
-                      >
-                        {course.status === "published" ? "Published" : "Draft"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-1 flex-col justify-between px-6 pb-6 pt-5">
-                    <div className="space-y-2.5">
-                      <h3
-                        className="min-h-[69px] line-clamp-3 text-[17px] font-semibold leading-[1.35] tracking-[-0.02em] text-slate-900 dark:text-slate-50"
-                        data-testid={`text-course-title-${course.id}`}
-                      >
-                        {course.title}
-                      </h3>
-                      <p
-                        className="line-clamp-3 min-h-[66px] text-[13px] leading-5 text-slate-500 dark:text-slate-400"
-                        data-testid={`text-course-audience-${course.id}`}
-                      >
-                        {course.targetAudience ? `For ${course.targetAudience}` : "Audience details to be defined"}
-                      </p>
-                    </div>
-
-                    <div className="mt-5 flex items-center justify-between border-t border-slate-200/80 pt-3 text-[12px] text-slate-500 dark:border-white/10 dark:text-slate-400">
-                      <span className="uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">Updated</span>
-                      <span data-testid={`text-course-updated-${course.id}`}>
-                        {new Date(course.updatedAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
+                {requiresRepair ? (
+                  <button
+                    type="button"
+                    onClick={() => repairLaunchMutation.mutate(course)}
+                    disabled={isRepairingCourse}
+                    className={`${cardClassName} disabled:cursor-wait disabled:opacity-70`}
+                  >
+                    {cardContent}
+                  </button>
+                ) : (
+                  <Link
+                    href={launchUrl}
+                    className={cardClassName}
+                  >
+                    {cardContent}
+                  </Link>
+                )}
 
                 <div className="absolute right-3 top-3 flex items-center gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                   <button

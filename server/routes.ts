@@ -27,9 +27,18 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { generateText, generateQuiz, generateAssignment, checkRateLimit, generateCourseOutline, generateChapterImagePrompt, generateImagePromptsForOutline, generateCompleteChapterImage, generateVideoWithTavus, generateVideoPrompt, generateCompleteVideo, tavusFetch } from "./ai-service";
-import { selectStockImage, refreshStockImageCatalog, getStockImageCatalog } from "./stock-images";
+import { refreshStockImageCatalog, getStockImageCatalog } from "./stock-images";
 import { createScormPackage } from "./scorm-service";
 import { getUploadsDir } from "./app";
+import {
+  defaultPassword,
+  ensureDefaultUsers,
+  getAuthenticatedUser,
+  hashPassword,
+  requireAuth,
+  toAuthUser,
+  verifyPassword,
+} from "./auth";
 import * as jose from "jose";
 import { nanoid } from "nanoid";
 import fetch from "node-fetch";
@@ -95,6 +104,118 @@ async function persistGeneratedAudio(audioBuffer: Buffer, extension = "mp3"): Pr
   await fs.writeFile(filepath, audioBuffer);
 
   return `/api/uploads/generated-audio/${filename}`;
+}
+
+async function buildSourceMaterialFromReferenceFiles(courseId: string): Promise<string> {
+  const files = await storage.getReferenceFilesByCourseId(courseId);
+  if (files.length === 0) {
+    return "";
+  }
+
+  const sourceSections: string[] = [
+    `Uploaded source files:\n${files.map((file) => `- ${file.originalName} (${file.mimetype})`).join("\n")}`,
+  ];
+
+  for (const file of files) {
+    const isPlainText =
+      file.mimetype.startsWith("text/") ||
+      file.originalName.toLowerCase().endsWith(".txt") ||
+      file.originalName.toLowerCase().endsWith(".md");
+
+    if (!isPlainText) {
+      continue;
+    }
+
+    try {
+      const filePath = path.join(getUploadsDir(), file.filename);
+      const rawText = await fs.readFile(filePath, "utf8");
+      const normalizedText = rawText.replace(/\s+/g, " ").trim();
+      if (!normalizedText) {
+        continue;
+      }
+
+      sourceSections.push(
+        `Content from ${file.originalName}:\n${normalizedText.slice(0, 20000)}`
+      );
+    } catch (error) {
+      console.warn(`Failed to read uploaded source file ${file.originalName}:`, error);
+    }
+  }
+
+  return sourceSections.join("\n\n");
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+async function replaceCourseOutline(courseId: string, outline: any, options?: { createChapterBlocks?: boolean }) {
+  const existingModules = await storage.getModulesByCourseId(courseId);
+  if (existingModules.length > 0) {
+    for (const module of existingModules) {
+      await storage.deleteModule(module.id);
+    }
+  }
+
+  const createdModules = [];
+  let globalOrder = 0;
+
+  for (const outlineModule of outline.modules || []) {
+    const parentModule = await storage.createModule({
+      courseId,
+      title: outlineModule.title,
+      description: outlineModule.learning_objective || "",
+      order: (globalOrder++).toString(),
+      lessonType: "block",
+    });
+
+    await storage.createContentBlock({
+      moduleId: parentModule.id,
+      type: "text",
+      content: {
+        text: "",
+      },
+      order: "0",
+      blockStyle: "default",
+      styling: {},
+      accessibility: {},
+    });
+
+    createdModules.push(parentModule);
+
+    if (outlineModule.chapters && outlineModule.chapters.length > 0) {
+      for (const chapter of outlineModule.chapters) {
+        const chapterModule = await storage.createModule({
+          courseId,
+          parentModuleId: parentModule.id,
+          title: chapter.title,
+          description: chapter.description || "",
+          order: (globalOrder++).toString(),
+          lessonType: "block",
+        });
+
+        if (options?.createChapterBlocks) {
+          await storage.createContentBlock({
+            moduleId: chapterModule.id,
+            type: "text",
+            content: {
+              text: chapter.description || "",
+            },
+            order: "0",
+            blockStyle: "default",
+            styling: {},
+            accessibility: {},
+          });
+        }
+
+        createdModules.push(chapterModule);
+      }
+    }
+  }
+
+  return createdModules;
 }
 
 function stripHtmlTags(value: string): string {
@@ -197,10 +318,119 @@ function getAppUrl(req: express.Request): string {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  await ensureDefaultUsers();
+
   // Serve uploaded files statically
   const uploadsPath = getUploadsDir();
   app.use('/uploads', express.static(uploadsPath));
   app.use('/api/uploads', express.static(uploadsPath));
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const user = await getAuthenticatedUser(req.session);
+      if (!user) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      return res.json({
+        user: toAuthUser(user),
+        defaultPassword,
+      });
+    } catch (error) {
+      return res.status(500).json({ message: "Failed to get authenticated user" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+
+      const user = await storage.getUserByUsername(username);
+      if (!user || !verifyPassword(password, user.password)) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+
+      req.session.userId = user.id;
+
+      return res.json({
+        user: toAuthUser(user),
+      });
+    } catch (error) {
+      return res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((error) => {
+      if (error) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+
+      res.clearCookie("opuslearn.sid");
+      return res.status(204).end();
+    });
+  });
+
+  app.post("/api/auth/change-password", requireAuth, async (req, res) => {
+    try {
+      const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
+      const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+      const user = res.locals.user;
+
+      if (!user) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (user.username.toLowerCase() === "guest") {
+        return res.status(403).json({ message: "Guest password cannot be changed" });
+      }
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current and new passwords are required" });
+      }
+
+      if (!verifyPassword(currentPassword, user.password)) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+
+      if (newPassword.length < 8) {
+        return res.status(400).json({ message: "New password must be at least 8 characters long" });
+      }
+
+      if (newPassword === currentPassword) {
+        return res.status(400).json({ message: "New password must be different from the current password" });
+      }
+
+      const updatedUser = await storage.updateUserPassword(user.id, hashPassword(newPassword));
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.json({
+        user: toAuthUser(updatedUser),
+      });
+    } catch (error) {
+      return res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
+  app.use((req, res, next) => {
+    if (!req.path.startsWith("/api")) {
+      return next();
+    }
+
+    const publicApiPrefixes = ["/api/auth", "/api/lti", "/api/uploads"];
+    if (publicApiPrefixes.some((prefix) => req.path.startsWith(prefix))) {
+      return next();
+    }
+
+    return requireAuth(req, res, next);
+  });
   
   // Course routes
   app.get("/api/courses", async (req, res) => {
@@ -315,15 +545,6 @@ app.post("/api/courses/:id/generate-outline", async (req, res) => {
             });
         }
 
-        // Check if modules already exist and delete them first
-        const existingModules = await storage.getModulesByCourseId(courseId);
-        if (existingModules && existingModules.length > 0) {
-            // Delete existing modules to replace them
-            for (const module of existingModules) {
-                await storage.deleteModule(module.id);
-            }
-        }
-
         // Generate course outline using AI
         const outline = await generateCourseOutline(course);
         const outlineMeta = outline?._meta ?? { source: "unknown" };
@@ -341,58 +562,7 @@ app.post("/api/courses/:id/generate-outline", async (req, res) => {
             title: outline.title
         });
 
-        // Create modules and chapters from the generated outline
-        // Structure: Course -> Modules -> Chapters (where chapters are also stored as modules)
-        // Chapters will NOT have content blocks as per requirement
-        const createdModules = [];
-        let globalOrder = 0;
-
-        // Process each module from the AI outline
-        for (const outlineModule of outline.modules || []) {
-            // Create the parent module (e.g., "MODULE 1: Foundations of Quantum Mechanics")
-            const parentModule = await storage.createModule({
-                courseId,
-                title: outlineModule.title,
-                description: outlineModule.learning_objective || "",
-                order: (globalOrder++).toString(),
-                lessonType: "block", // Parent module type
-            });
-
-            // Create a default content block for the parent module
-            await storage.createContentBlock({
-                moduleId: parentModule.id,
-                type: "text",
-                content: {
-                    text: ""
-                },
-                order: "0",
-                blockStyle: "default",
-                styling: {},
-                accessibility: {}
-            });
-
-            createdModules.push(parentModule);
-
-            // Create chapters under this module (stored as separate module records with parentModuleId)
-            // Chapters do NOT get content blocks
-            if (outlineModule.chapters && outlineModule.chapters.length > 0) {
-                for (const chapter of outlineModule.chapters) {
-                    const chapterModule = await storage.createModule({
-                        courseId,
-                        parentModuleId: parentModule.id, // Link chapter to parent module
-                        title: chapter.title,
-                        description: chapter.description || "",
-                        order: (globalOrder++).toString(), // Use global order to keep chapters after their parent
-                        lessonType: "block", // Chapter type
-                    });
-
-                    // DO NOT create content blocks for chapters as per requirement
-                    // Chapters should be empty placeholders
-
-                    createdModules.push(chapterModule);
-                }
-            }
-        }
+        const createdModules = await replaceCourseOutline(courseId, outline);
 
         res.setHeader("X-Outline-Source", String(outlineMeta.source || "unknown"));
         if (outlineMeta.reason) {
@@ -412,6 +582,59 @@ app.post("/api/courses/:id/generate-outline", async (req, res) => {
     }
 });
 
+app.post("/api/courses/:id/generate-outline-from-files", async (req, res) => {
+    try {
+        const courseId = req.params.id;
+        const course = await storage.getCourse(courseId);
+        if (!course) {
+            return res.status(404).json({
+                message: "Course not found"
+            });
+        }
+
+        const referenceFiles = await storage.getReferenceFilesByCourseId(courseId);
+        if (referenceFiles.length === 0) {
+            return res.status(400).json({
+                message: "No uploaded files found for this course"
+            });
+        }
+
+        const sourceMaterial = await buildSourceMaterialFromReferenceFiles(courseId);
+        const outline = await generateCourseOutline({
+            title: course.title,
+            topic: course.topic,
+            learningObjectives: course.learningObjectives,
+            sourceMaterial,
+        });
+        const outlineMeta = outline?._meta ?? { source: "unknown" };
+
+        await storage.updateCourse(courseId, {
+            title: outline.title || course.title,
+            learningObjectives: Array.isArray(outline.course_objectives) && outline.course_objectives.length > 0
+                ? outline.course_objectives.join("\n")
+                : course.learningObjectives,
+        });
+
+        const createdModules = await replaceCourseOutline(courseId, outline, { createChapterBlocks: true });
+
+        res.setHeader("X-Outline-Source", String(outlineMeta.source || "unknown"));
+        if (outlineMeta.reason) {
+            res.setHeader("X-Outline-Fallback-Reason", String(outlineMeta.reason).slice(0, 200));
+        }
+
+        res.json({
+            modules: createdModules,
+            outlineMeta,
+        });
+    } catch (error) {
+        console.error("Failed to generate course outline from uploaded files:", error);
+        res.status(500).json({
+            message: "Failed to generate course outline from uploaded files",
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
 app.post("/api/courses/:id/generate-cover-image", async (req, res) => {
     try {
         const courseId = req.params.id;
@@ -422,24 +645,40 @@ app.post("/api/courses/:id/generate-cover-image", async (req, res) => {
             });
         }
 
-        // Select appropriate stock image based on course title and topic
-        const stockImage = selectStockImage(course.title, course.topic);
-        const imageUrl = stockImage.url;
+        const generatedImage = await generateCompleteChapterImage(
+            course.title,
+            undefined,
+            {
+                title: course.title,
+                topic: course.topic,
+                objectives: course.learningObjectives,
+            },
+            "1792x1024",
+            {
+                sourceText: course.learningObjectives,
+                preferredStyle: "editorial educational cover illustration",
+                allowFallback: true,
+            }
+        );
+        const imageUrl = await persistGeneratedImage(generatedImage.imageUrl);
 
-        // Update course with selected stock image
         await storage.updateCourse(courseId, {
             coverImage: imageUrl
         });
 
-        console.log(`? Selected stock image for course "${course.title}": ${stockImage.description}`);
+        console.log(`Generated cover image for course "${course.title}"`, {
+            aiGenerated: generatedImage.isAIGenerated,
+            prompt: generatedImage.imagePrompt,
+            style: generatedImage.suggestedStyle,
+        });
 
         res.json({
             imageUrl,
             imageInfo: {
-                id: stockImage.id,
-                description: stockImage.description,
-                category: stockImage.category,
-                keywords: stockImage.keywords
+                description: generatedImage.visualBrief,
+                prompt: generatedImage.imagePrompt,
+                style: generatedImage.suggestedStyle,
+                aiGenerated: generatedImage.isAIGenerated,
             }
         });
     } catch (error) {
@@ -2243,7 +2482,7 @@ app.get("/api/ai/video-status/:videoId", async (req, res) => {
             throw new Error(`Failed to get video status: ${response.status}`);
         }
         
-        const statusData = await response.json();
+        const statusData: any = asRecord(await response.json());
         const normalizedStatus =
             statusData.status === "ready"
                 ? "completed"

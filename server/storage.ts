@@ -37,7 +37,7 @@ import {
   type ModuleWithContent
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and, lt } from "drizzle-orm";
+import { eq, desc, sql, and, lt, ilike } from "drizzle-orm";
 import type { CourseWithProgress } from "@shared/schema";
 
 export interface IStorage {
@@ -45,6 +45,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserPassword(id: string, password: string): Promise<User | undefined>;
 
   // Courses
   getCourse(id: string): Promise<Course | undefined>;
@@ -131,7 +132,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    const [user] = await db.select().from(users).where(ilike(users.username, username));
     return user || undefined;
   }
 
@@ -141,6 +142,16 @@ export class DatabaseStorage implements IStorage {
       .values(insertUser)
       .returning();
     return user;
+  }
+
+  async updateUserPassword(id: string, password: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ password })
+      .where(eq(users.id, id))
+      .returning();
+
+    return user || undefined;
   }
 
   // Courses
@@ -184,15 +195,24 @@ export class DatabaseStorage implements IStorage {
         ),
         first_content_blocks AS (
             SELECT id, module_id FROM ranked_content_blocks WHERE rn = 1
+        ),
+        reference_file_counts AS (
+            SELECT
+                rf.course_id,
+                COUNT(*)::integer AS reference_file_count
+            FROM reference_files rf
+            GROUP BY rf.course_id
         )
         SELECT
             c.*,
             COALESCE(fc.id, fpm.id) as "firstModuleId",
-            fcb.id as "firstContentBlockId"
+            fcb.id as "firstContentBlockId",
+            COALESCE(rfc.reference_file_count, 0) as "referenceFileCount"
         FROM courses c
         LEFT JOIN first_parent_modules fpm ON c.id = fpm.course_id
         LEFT JOIN first_chapters fc ON fpm.id = fc.parent_module_id
         LEFT JOIN first_content_blocks fcb ON COALESCE(fc.id, fpm.id) = fcb.module_id
+        LEFT JOIN reference_file_counts rfc ON c.id = rfc.course_id
         ORDER BY c.updated_at DESC
     `);
 
@@ -217,6 +237,7 @@ export class DatabaseStorage implements IStorage {
       updatedAt: row.updated_at,
       firstModuleId: row.firstModuleId,
       firstContentBlockId: row.firstContentBlockId,
+      referenceFileCount: Number(row.referenceFileCount || 0),
     })) as CourseWithProgress[];
   }
 

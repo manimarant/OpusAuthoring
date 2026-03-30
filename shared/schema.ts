@@ -294,6 +294,7 @@ export type Course = typeof courses.$inferSelect;
 export type CourseWithProgress = Course & {
   firstModuleId?: string;
   firstContentBlockId?: string;
+  referenceFileCount?: number;
 };
 export type InsertModule = z.infer<typeof insertModuleSchema>;
 export type Module = typeof modules.$inferSelect;

@@ -20,7 +20,7 @@ export default function Home() {
                 Build structured courses with AI and publish them for LMS delivery
               </h1>
               <p className="text-xl md:text-2xl font-light text-muted-foreground max-w-3xl mx-auto leading-relaxed" data-testid="text-hero-description">
-                OpusLearn helps teams generate outlines, author lessons, add media and assessments, and export courses as SCORM packages or LTI-ready experiences.
+                oPuslearn helps teams generate outlines, author lessons, add media and assessments, and export courses as SCORM packages or LTI-ready experiences.
               </p>
             </div>
           </div>
@@ -50,7 +50,7 @@ export default function Home() {
               </h2>
             </div>
             <p className="text-lg font-light text-muted-foreground" data-testid="text-step-1-description">
-              Start with a title, topic, audience, and learning objectives. OpusLearn uses that brief to create the initial course direction before content generation begins.
+              Start with a title, topic, audience, and learning objectives. oPuslearn uses that brief to create the initial course direction before content generation begins.
             </p>
             <ul className="space-y-3 text-muted-foreground" data-testid="list-step-1-features">
               <li className="flex items-start space-x-2">
@@ -74,7 +74,7 @@ export default function Home() {
           <div className="overflow-hidden h-full min-h-96" data-testid="image-step-1">
             <img 
               src={step1Image} 
-              alt="Author defining a course brief with title, audience, and learning objectives in OpusLearn" 
+              alt="Author defining a course brief with title, audience, and learning objectives in oPuslearn" 
               className="w-full h-full object-cover"
             />
           </div>
@@ -85,7 +85,7 @@ export default function Home() {
           <div className="overflow-hidden h-full min-h-96 md:order-first" data-testid="image-step-2">
             <img 
               src={step2Image} 
-              alt="Source documents being organized for upload and AI-assisted course generation in OpusLearn" 
+              alt="Source documents being organized for upload and AI-assisted course generation in oPuslearn" 
               className="w-full h-full object-cover"
             />
           </div>
@@ -99,7 +99,7 @@ export default function Home() {
               </h2>
             </div>
             <p className="text-lg font-light text-muted-foreground" data-testid="text-step-2-description">
-              Upload documents such as PDF, DOCX, PPTX, and text files. OpusLearn extracts the material and uses it as source context for AI-assisted course creation.
+              Upload documents such as PDF, DOCX, PPTX, and text files. oPuslearn extracts the material and uses it as source context for AI-assisted course creation.
             </p>
             <ul className="space-y-3 text-muted-foreground" data-testid="list-step-2-features">
               <li className="flex items-start space-x-2">
@@ -158,7 +158,7 @@ export default function Home() {
           <div className="overflow-hidden h-full min-h-96" data-testid="image-step-3">
             <img 
               src={step3Image} 
-              alt="Course modules and chapters being structured into an editable outline in OpusLearn" 
+              alt="Course modules and chapters being structured into an editable outline in oPuslearn" 
               className="w-full h-full object-cover"
             />
           </div>
@@ -169,7 +169,7 @@ export default function Home() {
           <div className="overflow-hidden h-full min-h-96 md:order-first" data-testid="image-step-4">
             <img 
               src={step4Image} 
-              alt="Lesson content being authored with structured content blocks inside OpusLearn" 
+              alt="Lesson content being authored with structured content blocks inside oPuslearn" 
               className="w-full h-full object-cover"
             />
           </div>
@@ -242,7 +242,7 @@ export default function Home() {
           <div className="overflow-hidden h-full min-h-96" data-testid="image-step-5">
             <img 
               src={step5Image} 
-              alt="AI-generated media, quizzes, and assignments being added to a lesson in OpusLearn" 
+              alt="AI-generated media, quizzes, and assignments being added to a lesson in oPuslearn" 
               className="w-full h-full object-cover"
             />
           </div>
@@ -253,7 +253,7 @@ export default function Home() {
           <div className="overflow-hidden h-full min-h-96 md:order-first" data-testid="image-step-6">
             <img 
               src={step6Image} 
-              alt="Finished course being prepared for SCORM export and MoodleCloud LTI publishing from OpusLearn" 
+              alt="Finished course being prepared for SCORM export and MoodleCloud LTI publishing from oPuslearn" 
               className="w-full h-full object-cover"
             />
           </div>
@@ -267,7 +267,7 @@ export default function Home() {
               </h2>
             </div>
             <p className="text-lg font-light text-muted-foreground" data-testid="text-step-6-description">
-              Export the finished course for delivery. OpusLearn supports SCORM packaging and LTI 1.3 setup so courses can be launched from platforms like MoodleCloud.
+              Export the finished course for delivery. oPuslearn supports SCORM packaging and LTI 1.3 setup so courses can be launched from platforms like MoodleCloud.
             </p>
             <ul className="space-y-3 text-muted-foreground" data-testid="list-step-6-features">
               <li className="flex items-start space-x-2">
@@ -294,7 +294,7 @@ export default function Home() {
         <div className="bg-white rounded-2xl p-12 mt-20" data-testid="section-intelligence">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-light text-foreground mb-4" data-testid="text-intelligence-title">
-              What OpusLearn actually helps you do
+              What oPuslearn actually helps you do
             </h2>
             <p className="text-xl font-light text-muted-foreground" data-testid="text-intelligence-description">
               It combines AI-assisted authoring with practical publishing workflows for teams building LMS-ready training content.
