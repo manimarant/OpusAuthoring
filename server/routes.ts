@@ -31,11 +31,13 @@ import { refreshStockImageCatalog, getStockImageCatalog } from "./stock-images";
 import { createScormPackage } from "./scorm-service";
 import { getUploadsDir } from "./app";
 import {
+  clearAuthCookie,
   defaultPassword,
   ensureDefaultUsers,
   getAuthenticatedUser,
   hashPassword,
   requireAuth,
+  setAuthCookie,
   toAuthUser,
   verifyPassword,
 } from "./auth";
@@ -319,6 +321,7 @@ function getAppUrl(req: express.Request): string {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   await ensureDefaultUsers();
+  const isSecureCookie = app.get("env") === "production";
 
   // Serve uploaded files statically
   const uploadsPath = getUploadsDir();
@@ -327,7 +330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/auth/me", async (req, res) => {
     try {
-      const user = await getAuthenticatedUser(req.session);
+      const user = await getAuthenticatedUser(req);
       if (!user) {
         return res.status(401).json({ message: "Not authenticated" });
       }
@@ -355,15 +358,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid username or password" });
       }
 
-      req.session.userId = user.id;
-      return req.session.save((error) => {
-        if (error) {
-          return res.status(500).json({ message: "Failed to persist login session" });
-        }
-
-        return res.json({
-          user: toAuthUser(user),
-        });
+      setAuthCookie(res, user.id, isSecureCookie);
+      return res.json({
+        user: toAuthUser(user),
       });
     } catch (error) {
       return res.status(500).json({ message: "Login failed" });
@@ -371,14 +368,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy((error) => {
-      if (error) {
-        return res.status(500).json({ message: "Logout failed" });
-      }
-
-      res.clearCookie("opuslearn.sid");
-      return res.status(204).end();
-    });
+    clearAuthCookie(res, isSecureCookie);
+    return res.status(204).end();
   });
 
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {
