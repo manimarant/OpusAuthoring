@@ -87187,8 +87187,20 @@ function verifyPassword(password, storedPassword) {
   if (!salt || !expectedHash) {
     return false;
   }
-  const actualHash = nodeCrypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString("hex");
-  return nodeCrypto.timingSafeEqual(Buffer.from(actualHash, "hex"), Buffer.from(expectedHash, "hex"));
+  if (!/^[a-f0-9]{32}$/i.test(salt) || !/^[a-f0-9]{128}$/i.test(expectedHash)) {
+    return false;
+  }
+  try {
+    const actualHash = nodeCrypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString("hex");
+    const actualBuffer = Buffer.from(actualHash, "hex");
+    const expectedBuffer = Buffer.from(expectedHash, "hex");
+    if (actualBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+    return nodeCrypto.timingSafeEqual(actualBuffer, expectedBuffer);
+  } catch {
+    return false;
+  }
 }
 function isGuestUsername(username) {
   return username.toLowerCase() === GUEST_USERNAME.toLowerCase();
