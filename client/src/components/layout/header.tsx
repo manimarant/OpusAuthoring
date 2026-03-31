@@ -41,7 +41,7 @@ export default function Header() {
             </div>
             <nav className="hidden flex-shrink lg:flex lg:space-x-8">
               <Link href="/" className="text-foreground transition-colors hover:text-primary" data-testid="link-dashboard">
-                Dashboard
+                Home
               </Link>
               <Link href="/my-courses" className="text-foreground transition-colors hover:text-primary" data-testid="link-courses">
                 My Courses
