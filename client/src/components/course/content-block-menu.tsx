@@ -335,9 +335,13 @@ export default function ContentBlockMenu({ onAddContent, onClose, mode = "defaul
           isGenerated: false 
         };
       case "continue":
-        return { text: "Continue", url: "" };
+        return { text: "Continue", action: "next_lesson", url: "" };
       case "list":
-        return { title: "", items: [], type: "unordered" };
+        return {
+          title: "",
+          items: [{ title: "", description: "" }],
+          type: "unordered",
+        };
       default:
         return {};
     }

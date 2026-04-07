@@ -28,6 +28,7 @@ interface RichTextEditorProps {
   onBlur?: () => void;
   placeholder?: string;
   className?: string;
+  editorContentClassName?: string;
   toolbarExtras?: React.ReactNode;
   suppressToolbar?: boolean;
 }
@@ -39,6 +40,7 @@ export default function RichTextEditor({
   onBlur,
   placeholder = "Start typing...",
   className,
+  editorContentClassName,
   toolbarExtras,
   suppressToolbar = false,
 }: RichTextEditorProps) {
@@ -79,8 +81,10 @@ export default function RichTextEditor({
     },
     editorProps: {
       attributes: {
-        class:
+        class: cn(
           'rise-content rise-rich-editor prose prose-slate max-w-none focus:outline-none min-h-[32px] px-0 py-0 text-[15px] leading-7 [&_h2]:text-[1.65rem] [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:my-0.5 [&_ul]:my-0.5 [&_ol]:my-0.5',
+          editorContentClassName,
+        ),
       },
     },
   });

@@ -281,8 +281,13 @@ export default function ContentTypeModal({ open, onClose, onAddContent, isLoadin
         };
       case "list":
         return {
-          items: ["List item 1", "List item 2", "List item 3"],
-          ordered: false
+          title: "List",
+          items: [
+            { title: "Subheading 1", description: "Paragraph text for the first list item." },
+            { title: "Subheading 2", description: "Paragraph text for the second list item." },
+            { title: "Subheading 3", description: "Paragraph text for the third list item." }
+          ],
+          type: "unordered"
         };
       case "sorting-activity":
         return {
@@ -316,8 +321,8 @@ export default function ContentTypeModal({ open, onClose, onAddContent, isLoadin
       case "continue":
         return {
           text: "Click to continue to the next section",
-          navigationRestricted: false,
-          completionRequired: true
+          action: "next_lesson",
+          url: ""
         };
       default:
         return { content: "Sample content for " + type };

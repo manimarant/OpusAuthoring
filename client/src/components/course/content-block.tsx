@@ -1,4 +1,4 @@
-import { Component, type ReactNode, useEffect, useRef, useState } from "react";
+import { Component, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Sparkles, Trash2, Copy, MoveVertical, Play, Pause, Edit, ChevronDown, ChevronLeft, ChevronRight, RotateCw, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SanitizedHTML } from "@/components/ui/sanitized-html";
@@ -6,9 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import RichTextEditor from "@/components/ui/rich-text-editor";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { ContentBlock } from "@shared/schema";
+import type { ContentBlock, Module } from "@shared/schema";
 import InlineAiAssistant from "@/components/ai/inline-ai-assistant";
 import AiQuizGenerationDialog from "@/components/ai/ai-quiz-generation-dialog";
 import AiAssignmentGenerationDialog from "@/components/ai/ai-assignment-generation-dialog";
@@ -18,11 +18,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useDrag, useDrop } from "react-dnd";
 import type { Identifier } from "dnd-core";
 import { getImageDisplayProps } from "@/utils/image-generation";
+import { useLocation } from "wouter";
 
 interface ContentBlockComponentProps {
   contentBlock: ContentBlock;
   previewMode?: boolean;
   onMoveBlock?: (dragId: string, hoverId: string) => void;
+  onContentChange?: (blockId: string, content: Record<string, any>) => void;
 }
 
 interface BlockErrorBoundaryProps {
@@ -37,6 +39,15 @@ interface BlockErrorBoundaryState {
 
 function stripHtml(value: string) {
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 class BlockErrorBoundary extends Component<BlockErrorBoundaryProps, BlockErrorBoundaryState> {
@@ -67,7 +78,12 @@ class BlockErrorBoundary extends Component<BlockErrorBoundaryProps, BlockErrorBo
   }
 }
 
-export default function ContentBlockComponent({ contentBlock, previewMode = false, onMoveBlock }: ContentBlockComponentProps) {
+export default function ContentBlockComponent({
+  contentBlock,
+  previewMode = false,
+  onMoveBlock,
+  onContentChange,
+}: ContentBlockComponentProps) {
   const [editedContent, setEditedContent] = useState<Record<string, any>>(() => {
     return contentBlock.content && typeof contentBlock.content === 'object' ? contentBlock.content : {};
   });
@@ -110,6 +126,7 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
     duration: number;
   }>({ isPlaying: false, currentTime: 0, duration: 0 });
   const [uploadingImageKey, setUploadingImageKey] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
   // Drag and drop setup
   const [{ handlerId }, drop] = useDrop<
     { id: string; type: string },
@@ -161,6 +178,12 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
   }, [editedContent]);
 
   useEffect(() => {
+    if (!previewMode) {
+      onContentChange?.(contentBlock.id, editedContent);
+    }
+  }, [contentBlock.id, editedContent, onContentChange, previewMode]);
+
+  useEffect(() => {
     setActiveTimelineEvent(0);
     setActiveGraphicLabel(0);
     setActiveGalleryCarouselIndex(0);
@@ -169,6 +192,46 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
 
   const getStoredFileUrl = (storageKey: string) =>
     /^https?:\/\//i.test(storageKey) ? storageKey : `/uploads/${storageKey}`;
+
+  const { data: currentModule } = useQuery<Module>({
+    queryKey: ["/api/modules", contentBlock.moduleId],
+    enabled: Boolean(contentBlock.moduleId),
+    staleTime: 30000,
+    placeholderData: (previousData: Module | undefined) => previousData,
+  });
+
+  const { data: courseModules } = useQuery<Module[]>({
+    queryKey: ["/api/courses", currentModule?.courseId, "modules"],
+    enabled: Boolean(currentModule?.courseId),
+    staleTime: 30000,
+    placeholderData: (previousData: Module[] | undefined) => previousData,
+  });
+
+  const nextLessonPath = useMemo(() => {
+    if (!currentModule || !courseModules || courseModules.length === 0) {
+      return "";
+    }
+
+    const sortedModules = [...courseModules].sort((a, b) => parseInt(a.order) - parseInt(b.order));
+    const topLevelModules = sortedModules.filter((module) => !module.parentModuleId);
+    const lessonSequence: Module[] = [];
+
+    for (const topLevelModule of topLevelModules) {
+      const childLessons = sortedModules
+        .filter((candidate) => candidate.parentModuleId === topLevelModule.id)
+        .sort((a, b) => parseInt(a.order) - parseInt(b.order));
+
+      if (childLessons.length > 0) {
+        lessonSequence.push(...childLessons);
+      } else {
+        lessonSequence.push(topLevelModule);
+      }
+    }
+
+    const currentIndex = lessonSequence.findIndex((module) => module.id === contentBlock.moduleId);
+    const nextLesson = currentIndex >= 0 ? lessonSequence[currentIndex + 1] : null;
+    return nextLesson ? `/module/${nextLesson.id}/content` : "";
+  }, [contentBlock.moduleId, courseModules, currentModule]);
 
   const renderImagePlaceholder = (title: string, description: string, compact = false) => (
     <div
@@ -550,6 +613,22 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
     setAudioState(prev => ({ ...prev, isPlaying: false, currentTime: 0 }));
   };
 
+  const handleContinueAction = (content: any) => {
+    const action = content.action || "next_lesson";
+
+    if (action === "external_url") {
+      const url = String(content.url || "").trim();
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+
+    if (nextLessonPath) {
+      setLocation(nextLessonPath);
+    }
+  };
+
   const getBlockIcon = (type: string) => {
     const icons: Record<string, string> = {
       text: "ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â",
@@ -657,6 +736,9 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
   const editorFieldClass =
     "border-slate-200 bg-white text-base shadow-none placeholder:text-slate-400 focus-visible:ring-slate-300";
   const editorTextareaClass = `min-h-[88px] resize-none ${editorFieldClass}`;
+  const inlineInputClass =
+    "w-full border-0 bg-transparent px-0 py-0 text-inherit shadow-none placeholder:text-inherit/60 focus-visible:ring-0 focus-visible:ring-offset-0";
+  const inlineTextareaClass = `min-h-0 w-full resize-none border-0 bg-transparent px-0 py-0 text-inherit shadow-none placeholder:text-inherit/60 focus-visible:ring-0 focus-visible:ring-offset-0`;
 
   const renderEditorField = (
     label: string,
@@ -691,6 +773,1076 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
       {children}
     </section>
   );
+
+  const renderListBlock = (content: any, editable = false) => {
+    const listType = content.type === "ordered" ? "ordered" : "unordered";
+    const items = Array.isArray(content.items) ? content.items : [];
+
+    return (
+      <div
+        className={editable ? "rounded-2xl border border-transparent px-4 py-3 transition-colors group-hover:border-slate-200 focus-within:border-slate-300" : "space-y-4"}
+        data-testid={`${editable ? "edit" : "content"}-list-${contentBlock.id}`}
+      >
+        <div className="space-y-3">
+        {editable ? (
+          <Input
+            value={content.title || ""}
+            onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+            placeholder="List title"
+            className={`${inlineInputClass} text-lg font-semibold text-slate-900`}
+            data-testid={`input-list-title-${contentBlock.id}`}
+          />
+        ) : content.title ? (
+          <h3 className="text-lg font-semibold text-slate-900">{content.title}</h3>
+        ) : null}
+
+        {items.length > 0 ? (
+          <div className={editable ? "space-y-2" : "space-y-3"}>
+            {items.map((item: any, index: number) => {
+              const itemTitle = typeof item === "string"
+                ? item
+                : String(item?.title || item?.text || "");
+              const itemDescription = typeof item === "string"
+                ? ""
+                : String(item?.description || "");
+              const marker = listType === "ordered" ? `${index + 1}` : "";
+
+              return (
+                <div key={index} className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 ${editable ? "py-0.5" : ""}`}>
+                  <div
+                    className={`mt-0.5 flex min-h-7 min-w-7 items-center justify-center text-sm font-semibold ${
+                      listType === "ordered"
+                        ? "rounded-full border border-slate-200 px-2 text-slate-700"
+                        : "text-slate-400"
+                    }`}
+                    data-testid={`list-marker-${index}-${contentBlock.id}`}
+                  >
+                    {listType === "ordered" ? marker : "•"}
+                  </div>
+
+                  {editable ? (
+                    <div className="space-y-1">
+                      <div className="flex items-start gap-3">
+                        <Input
+                          value={itemTitle}
+                          onChange={(e) => {
+                            const nextItems = [...items];
+                            const nextItem =
+                              typeof nextItems[index] === "string"
+                                ? { title: e.target.value, description: "", label: "" }
+                                : { ...(nextItems[index] || {}), title: e.target.value };
+                            nextItems[index] = nextItem;
+                            setEditedContent({ ...content, items: nextItems });
+                          }}
+                          placeholder={`Subheading ${index + 1}`}
+                          className={`${inlineInputClass} pt-0.5 text-base font-semibold leading-7 text-slate-900`}
+                          data-testid={`input-list-item-title-${index}-${contentBlock.id}`}
+                        />
+                      </div>
+                      <Textarea
+                        value={itemDescription}
+                        onChange={(e) => {
+                          const nextItems = [...items];
+                          const nextItem =
+                            typeof nextItems[index] === "string"
+                              ? { title: itemTitle, description: e.target.value, label: "" }
+                              : { ...(nextItems[index] || {}), description: e.target.value };
+                          nextItems[index] = nextItem;
+                          setEditedContent({ ...content, items: nextItems });
+                        }}
+                        placeholder={`Paragraph ${index + 1}`}
+                        className={`${inlineTextareaClass} min-h-[44px] text-sm leading-6 text-slate-600`}
+                        data-testid={`input-list-item-description-${index}-${contentBlock.id}`}
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-1 pt-0.5">
+                      <div className="text-base font-semibold leading-7 text-slate-900">
+                        {itemTitle || `Subheading ${index + 1}`}
+                      </div>
+                      <div className="text-sm leading-7 text-slate-600">
+                        {itemDescription || "Add paragraph text for this list item."}
+                      </div>
+                    </div>
+                  )}
+
+                  {editable ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const nextItems = [...items];
+                        nextItems.splice(index, 1);
+                        setEditedContent({ ...content, items: nextItems });
+                      }}
+                      data-testid={`button-remove-list-item-${index}-${contentBlock.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <div />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : editable ? (
+          <div className="py-2 text-base text-slate-400">Add the first list item.</div>
+        ) : null}
+
+        {editable ? (
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <Button
+              variant={listType === "ordered" ? "default" : "outline"}
+              size="sm"
+              className="rounded-full"
+              onClick={() => setEditedContent({ ...content, type: "ordered" })}
+              data-testid={`button-list-ordered-${contentBlock.id}`}
+            >
+              Numbered
+            </Button>
+            <Button
+              variant={listType === "unordered" ? "default" : "outline"}
+              size="sm"
+              className="rounded-full"
+              onClick={() => setEditedContent({ ...content, type: "unordered" })}
+              data-testid={`button-list-unordered-${contentBlock.id}`}
+            >
+              Bullets
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              onClick={() => {
+                const nextItems = [...items, listType === "ordered" ? { title: "", description: "", label: "" } : { title: "", description: "" }];
+                setEditedContent({ ...content, items: nextItems });
+              }}
+              data-testid={`button-add-list-item-${contentBlock.id}`}
+            >
+              Add item
+            </Button>
+          </div>
+        ) : null}
+        </div>
+      </div>
+    );
+  };
+
+  const renderAccordionBlock = (content: any, editable = false) => {
+    const items = Array.isArray(content.items) ? content.items : [];
+    return (
+      <div className="space-y-2" data-testid={`${editable ? "edit" : "content"}-accordion-${contentBlock.id}`}>
+        {editable ? (
+          <Input
+            value={content.title || ""}
+            onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+            placeholder="Accordion title"
+            className={`${inlineInputClass} mb-3 text-lg font-semibold text-slate-900`}
+            data-testid={`input-accordion-title-${contentBlock.id}`}
+          />
+        ) : content.title ? (
+          <h3 className="mb-3 text-lg font-semibold text-slate-900">{content.title}</h3>
+        ) : null}
+        {items.map((item: any, index: number) => (
+          <div key={index} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-4 py-3 text-left"
+              onClick={() => toggleAccordionItem(index)}
+              data-testid={`button-toggle-accordion-item-${index}-${contentBlock.id}`}
+            >
+              {editable ? (
+                <Input
+                  value={item.title || ""}
+                  onChange={(e) => {
+                    const nextItems = [...items];
+                    nextItems[index] = { ...(nextItems[index] || {}), title: e.target.value };
+                    setEditedContent({ ...content, items: nextItems });
+                  }}
+                  placeholder={`Section ${index + 1}`}
+                  className={`${inlineInputClass} font-medium text-slate-900`}
+                  data-testid={`input-accordion-item-title-${index}-${contentBlock.id}`}
+                />
+              ) : (
+                <h4 className="font-medium text-slate-900">{item.title || `Accordion Item ${index + 1}`}</h4>
+              )}
+              <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${expandedAccordionItems[index] ? "rotate-180" : ""}`} />
+            </button>
+            {expandedAccordionItems[index] ? (
+              <div className="border-t border-slate-100 px-4 py-3 text-sm text-slate-600">
+                {editable ? (
+                  <div className="space-y-3">
+                    <Textarea
+                      value={item.content || ""}
+                      onChange={(e) => {
+                        const nextItems = [...items];
+                        nextItems[index] = { ...(nextItems[index] || {}), content: e.target.value };
+                        setEditedContent({ ...content, items: nextItems });
+                      }}
+                      placeholder="Section content"
+                      className={`${inlineTextareaClass} min-h-[88px] text-sm leading-7 text-slate-600`}
+                      data-testid={`input-accordion-item-content-${index}-${contentBlock.id}`}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const nextItems = [...items];
+                        nextItems.splice(index, 1);
+                        setEditedContent({ ...content, items: nextItems });
+                      }}
+                      data-testid={`button-remove-accordion-item-${index}-${contentBlock.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  item.content || "Content for this accordion section would appear here when expanded."
+                )}
+              </div>
+            ) : null}
+          </div>
+        ))}
+        {editable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={() => setEditedContent({ ...content, items: [...items, { title: "", content: "" }] })}
+            data-testid={`button-add-accordion-item-${contentBlock.id}`}
+          >
+            Add item
+          </Button>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderFlashcardsBlock = (content: any, editable = false) => {
+    const cards = Array.isArray(content.cards) ? content.cards : [];
+    return (
+      <div className="space-y-4" data-testid={`${editable ? "edit" : "content"}-flashcards-${contentBlock.id}`}>
+        {editable ? (
+          <Input
+            value={content.title || ""}
+            onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+            placeholder="Flashcards title"
+            className={`${inlineInputClass} text-lg font-semibold text-slate-900`}
+            data-testid={`input-flashcards-title-${contentBlock.id}`}
+          />
+        ) : content.title ? (
+          <h3 className="text-lg font-semibold text-slate-900">{content.title}</h3>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          {cards.map((card: any, index: number) => (
+            <div
+              key={index}
+              className={`group relative text-left ${cards.length === 3 && index === 2 ? "md:col-span-2 md:mx-auto md:w-[calc(50%-0.5rem)]" : ""}`}
+              data-testid={`button-toggle-flashcard-${index}-${contentBlock.id}`}
+            >
+              {editable ? (
+                <div className="absolute right-3 top-3 z-30 flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleFlashcard(index)}
+                    data-testid={`button-flip-flashcard-${index}-${contentBlock.id}`}
+                  >
+                    <RotateCw className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const nextCards = [...cards];
+                      nextCards.splice(index, 1);
+                      setEditedContent({ ...content, cards: nextCards });
+                    }}
+                    data-testid={`button-remove-flashcard-${index}-${contentBlock.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : null}
+              <div className={`relative min-h-[220px] rounded-2xl transition-transform duration-500 [transform-style:preserve-3d] ${flippedFlashcards[index] ? "[transform:rotateY(180deg)]" : ""}`}>
+                {!editable ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleFlashcard(index)}
+                    className="absolute inset-0 z-10 rounded-2xl"
+                    aria-label={`Flip flashcard ${index + 1}`}
+                  />
+                ) : null}
+                <div className="absolute inset-0 flex min-h-[220px] flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm [backface-visibility:hidden]">
+                  <div className="py-4 pr-16">
+                    {editable ? (
+                      <Input
+                        value={card.front || ""}
+                        onChange={(e) => {
+                          const nextCards = [...cards];
+                          nextCards[index] = { ...(nextCards[index] || {}), front: e.target.value };
+                          setEditedContent({ ...content, cards: nextCards });
+                        }}
+                        placeholder={`Card ${index + 1} front`}
+                        className={`${inlineInputClass} relative z-20 text-lg font-medium leading-relaxed text-slate-900`}
+                        data-testid={`input-flashcard-front-${index}-${contentBlock.id}`}
+                      />
+                    ) : (
+                      <h4 className="relative z-20 text-lg font-medium leading-relaxed text-slate-900">{card.front || `Flashcard ${index + 1}`}</h4>
+                    )}
+                  </div>
+                  {!editable ? (
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-sm text-slate-500">
+                      <span>Click to flip</span>
+                      <RotateCw className="h-4 w-4" />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="absolute inset-0 flex min-h-[220px] flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                  <div className="py-4 pr-16">
+                    {editable ? (
+                      <Textarea
+                        value={card.back || ""}
+                        onChange={(e) => {
+                          const nextCards = [...cards];
+                          nextCards[index] = { ...(nextCards[index] || {}), back: e.target.value };
+                          setEditedContent({ ...content, cards: nextCards });
+                        }}
+                        placeholder={`Card ${index + 1} back`}
+                        className={`${inlineTextareaClass} relative z-20 min-h-[88px] text-lg font-medium leading-relaxed text-slate-900`}
+                        data-testid={`input-flashcard-back-${index}-${contentBlock.id}`}
+                      />
+                    ) : (
+                      <h4 className="relative z-20 text-lg font-medium leading-relaxed text-slate-900">{card.back || ""}</h4>
+                    )}
+                  </div>
+                  {!editable ? (
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-sm text-slate-500">
+                      <span>Click to flip</span>
+                      <RotateCw className="h-4 w-4 rotate-180" />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {editable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={() => setEditedContent({ ...content, cards: [...cards, { front: "", back: "" }] })}
+            data-testid={`button-add-flashcard-${contentBlock.id}`}
+          >
+            Add card
+          </Button>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderTimelineBlock = (content: any, editable = false) => {
+    const events = (Array.isArray(content.events) ? content.events : []).slice(0, 6);
+    const selectedEvent = events[activeTimelineEvent] || events[0];
+    return (
+      <div className="space-y-4" data-testid={`${editable ? "edit" : "content"}-timeline-${contentBlock.id}`}>
+        {editable ? (
+          <Input
+            value={content.title || ""}
+            onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+            placeholder="Timeline title"
+            className={`${inlineInputClass} text-lg font-semibold text-slate-900`}
+            data-testid={`input-timeline-title-${contentBlock.id}`}
+          />
+        ) : content.title ? (
+          <h3 className="text-lg font-semibold text-slate-900">{content.title}</h3>
+        ) : null}
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="space-y-2">
+            {events.map((event: any, index: number) => (
+              <button
+                key={index}
+                type="button"
+                onClick={() => setActiveTimelineEvent(index)}
+                className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                  activeTimelineEvent === index ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+                data-testid={`button-select-timeline-event-${index}-${contentBlock.id}`}
+              >
+                <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-slate-200">
+                  <div className="h-3 w-3 rounded-full bg-slate-700" />
+                </div>
+                <div className="min-w-0">
+                  {editable ? (
+                    <>
+                      <Input
+                        value={event.date || ""}
+                        onChange={(e) => {
+                          const nextEvents = [...events];
+                          nextEvents[index] = { ...(nextEvents[index] || {}), date: e.target.value };
+                          setEditedContent({ ...content, events: nextEvents });
+                        }}
+                        placeholder="Date"
+                        className={`${inlineInputClass} text-xs font-semibold uppercase tracking-[0.14em] text-slate-500`}
+                        data-testid={`input-timeline-date-${index}-${contentBlock.id}`}
+                      />
+                      <Input
+                        value={event.title || ""}
+                        onChange={(e) => {
+                          const nextEvents = [...events];
+                          nextEvents[index] = { ...(nextEvents[index] || {}), title: e.target.value };
+                          setEditedContent({ ...content, events: nextEvents });
+                        }}
+                        placeholder={`Event ${index + 1}`}
+                        className={`${inlineInputClass} mt-1 font-medium text-slate-900`}
+                        data-testid={`input-timeline-event-title-${index}-${contentBlock.id}`}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {event.date ? <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{event.date}</div> : null}
+                      <div className="mt-1 font-medium text-slate-900">{event.title || `Event ${index + 1}`}</div>
+                    </>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            {editable ? (
+              <div className="space-y-3">
+                <Input
+                  value={selectedEvent?.date || ""}
+                  onChange={(e) => {
+                    const nextEvents = [...events];
+                    if (nextEvents[activeTimelineEvent]) {
+                      nextEvents[activeTimelineEvent] = { ...(nextEvents[activeTimelineEvent] || {}), date: e.target.value };
+                      setEditedContent({ ...content, events: nextEvents });
+                    }
+                  }}
+                  placeholder="Date"
+                  className={`${inlineInputClass} text-xs font-semibold uppercase tracking-[0.16em] text-slate-500`}
+                  data-testid={`input-timeline-selected-date-${contentBlock.id}`}
+                />
+                <Input
+                  value={selectedEvent?.title || ""}
+                  onChange={(e) => {
+                    const nextEvents = [...events];
+                    if (nextEvents[activeTimelineEvent]) {
+                      nextEvents[activeTimelineEvent] = { ...(nextEvents[activeTimelineEvent] || {}), title: e.target.value };
+                      setEditedContent({ ...content, events: nextEvents });
+                    }
+                  }}
+                  placeholder="Timeline event"
+                  className={`${inlineInputClass} text-xl font-semibold text-slate-900`}
+                  data-testid={`input-timeline-selected-title-${contentBlock.id}`}
+                />
+                <Textarea
+                  value={selectedEvent?.description || ""}
+                  onChange={(e) => {
+                    const nextEvents = [...events];
+                    if (nextEvents[activeTimelineEvent]) {
+                      nextEvents[activeTimelineEvent] = { ...(nextEvents[activeTimelineEvent] || {}), description: e.target.value };
+                      setEditedContent({ ...content, events: nextEvents });
+                    }
+                  }}
+                  placeholder="Describe this event"
+                  className={`${inlineTextareaClass} min-h-[120px] text-sm leading-7 text-slate-600`}
+                  data-testid={`input-timeline-selected-description-${contentBlock.id}`}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => setEditedContent({ ...content, events: [...events, { date: "", title: "", description: "" }] })}
+                  data-testid={`button-add-timeline-event-${contentBlock.id}`}
+                >
+                  Add event
+                </Button>
+              </div>
+            ) : (
+              <>
+                {selectedEvent?.date ? <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{selectedEvent.date}</div> : null}
+                <h4 className="mt-2 text-xl font-semibold text-slate-900">{selectedEvent?.title || "Timeline event"}</h4>
+                <p className="mt-3 text-sm leading-7 text-slate-600">{selectedEvent?.description || "Select a timeline event to read the detail."}</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderScenarioBlock = (content: any, editable = false) => {
+    const choices = Array.isArray(content.choices) ? content.choices : [];
+    const activeChoice = selectedScenarioChoice !== null ? choices[selectedScenarioChoice] : null;
+    return (
+      <div className="rounded-lg border border-slate-200 bg-transparent p-4" data-testid={`${editable ? "edit" : "content"}-scenario-${contentBlock.id}`}>
+        <div className="flex items-start space-x-3">
+          <div className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">Scenario</div>
+          <div className="flex-1">
+            {editable ? (
+              <>
+                <Input
+                  value={content.title || ""}
+                  onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+                  placeholder="Interactive Scenario"
+                  className={`${inlineInputClass} mb-2 font-medium text-slate-900`}
+                  data-testid={`input-scenario-title-${contentBlock.id}`}
+                />
+                <Textarea
+                  value={content.description || ""}
+                  onChange={(e) => setEditedContent({ ...content, description: e.target.value })}
+                  placeholder="Describe the scenario"
+                  className={`${inlineTextareaClass} mb-3 min-h-[64px] text-sm text-slate-500`}
+                  data-testid={`input-scenario-description-${contentBlock.id}`}
+                />
+              </>
+            ) : (
+              <>
+                <h4 className="mb-2 font-medium text-slate-900">{content.title || "Interactive Scenario"}</h4>
+                <p className="mb-3 text-sm text-slate-500">{content.description || "This scenario presents learners with realistic situations and decision-making opportunities."}</p>
+              </>
+            )}
+            <div className="space-y-2">
+              {choices.map((choice: any, index: number) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => setSelectedScenarioChoice(index)}
+                  className={`w-full rounded p-2 text-left text-sm transition-colors ${
+                    selectedScenarioChoice === index ? "bg-slate-900 text-white" : "border border-slate-200 bg-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                  data-testid={`button-scenario-choice-${index}-${contentBlock.id}`}
+                >
+                  {editable ? (
+                    <Input
+                      value={choice.text || ""}
+                      onChange={(e) => {
+                        const nextChoices = [...choices];
+                        nextChoices[index] = { ...(nextChoices[index] || {}), text: e.target.value };
+                        setEditedContent({ ...content, choices: nextChoices });
+                      }}
+                      placeholder={`Choice ${index + 1}`}
+                      className={`${inlineInputClass} ${selectedScenarioChoice === index ? "text-white placeholder:text-white/70" : "text-slate-700"}`}
+                      data-testid={`input-scenario-choice-${index}-${contentBlock.id}`}
+                    />
+                  ) : (
+                    choice.text || `Choice ${index + 1}`
+                  )}
+                </button>
+              ))}
+            </div>
+            {activeChoice ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-transparent p-3 text-sm text-slate-700 shadow-sm">
+                {editable ? (
+                  <Textarea
+                    value={activeChoice.feedback || activeChoice.outcome || ""}
+                    onChange={(e) => {
+                      const nextChoices = [...choices];
+                      nextChoices[selectedScenarioChoice ?? 0] = { ...(nextChoices[selectedScenarioChoice ?? 0] || {}), feedback: e.target.value };
+                      setEditedContent({ ...content, choices: nextChoices });
+                    }}
+                    placeholder="Feedback for the selected choice"
+                    className={`${inlineTextareaClass} min-h-[88px] text-sm leading-7 text-slate-700`}
+                    data-testid={`input-scenario-feedback-${contentBlock.id}`}
+                  />
+                ) : (
+                  activeChoice.feedback || activeChoice.outcome || "Add feedback to this choice in edit mode to display the learner outcome."
+                )}
+              </div>
+            ) : null}
+            {editable ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 rounded-full"
+                onClick={() => setEditedContent({ ...content, choices: [...choices, { text: "", feedback: "" }] })}
+                data-testid={`button-add-scenario-choice-${contentBlock.id}`}
+              >
+                Add choice
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLabeledGraphicBlock = (content: any, editable = false) => {
+    const labels = Array.isArray(content.labels) ? content.labels : [];
+    const selectedLabel = labels[activeGraphicLabel] || labels[0];
+    const imageUrl = content.image?.url || `https://picsum.photos/seed/labeled-${contentBlock.id}/600/400`;
+    const imageAlt = content.image?.alt || "Labeled graphic";
+
+    return (
+      <div className="space-y-4" data-testid={`${editable ? "edit" : "content"}-labeled-graphic-${contentBlock.id}`}>
+        <div className="relative overflow-hidden rounded-lg aspect-video bg-slate-100">
+          <img src={imageUrl} alt={imageAlt} className="h-full w-full object-cover" />
+          {labels.map((label: any, index: number) => (
+            <button
+              type="button"
+              key={index}
+              className={`absolute flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-bold text-white shadow-sm transition-all ${
+                activeGraphicLabel === index
+                  ? "border-white bg-slate-900 scale-110"
+                  : "border-slate-100 bg-slate-600 hover:bg-slate-700"
+              }`}
+              style={{
+                left: `${typeof label.x === "number" || /^\d+(\.\d+)?$/.test(String(label.x || "")) ? Number(label.x) : 20 + index * 25}%`,
+                top: `${typeof label.y === "number" || /^\d+(\.\d+)?$/.test(String(label.y || "")) ? Number(label.y) : 30 + index * 20}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+              onClick={() => setActiveGraphicLabel(index)}
+              data-testid={`button-labeled-graphic-label-${index}-${contentBlock.id}`}
+            >
+              {index + 1}
+            </button>
+          ))}
+        </div>
+
+        {editable ? (
+          <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
+              <Input
+                value={content.image?.url || ""}
+                onChange={(e) => setEditedContent({ ...content, image: { ...(content.image || {}), url: e.target.value } })}
+                placeholder="Image URL"
+                className={editorFieldClass}
+                data-testid={`input-labeled-graphic-image-url-${contentBlock.id}`}
+              />
+              <Input
+                value={content.image?.alt || ""}
+                onChange={(e) => setEditedContent({ ...content, image: { ...(content.image || {}), alt: e.target.value } })}
+                placeholder="Alt text"
+                className={editorFieldClass}
+                data-testid={`input-labeled-graphic-image-alt-${contentBlock.id}`}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => {
+                  const nextIndex = labels.length;
+                  setEditedContent({
+                    ...content,
+                    labels: [...labels, { title: "", content: "", x: Math.min(80, 20 + nextIndex * 15), y: Math.min(80, 25 + nextIndex * 12) }],
+                  });
+                  setActiveGraphicLabel(nextIndex);
+                }}
+                data-testid={`button-add-labeled-graphic-label-${contentBlock.id}`}
+              >
+                Add label
+              </Button>
+            </div>
+            {selectedLabel ? (
+              <div className="space-y-3">
+                <Input
+                  value={selectedLabel.title || ""}
+                  onChange={(e) => {
+                    const nextLabels = [...labels];
+                    nextLabels[activeGraphicLabel] = { ...(nextLabels[activeGraphicLabel] || {}), title: e.target.value };
+                    setEditedContent({ ...content, labels: nextLabels });
+                  }}
+                  placeholder={`Label ${activeGraphicLabel + 1} title`}
+                  className={editorFieldClass}
+                  data-testid={`input-labeled-graphic-label-title-${contentBlock.id}`}
+                />
+                <Textarea
+                  value={selectedLabel.content || ""}
+                  onChange={(e) => {
+                    const nextLabels = [...labels];
+                    nextLabels[activeGraphicLabel] = { ...(nextLabels[activeGraphicLabel] || {}), content: e.target.value };
+                    setEditedContent({ ...content, labels: nextLabels });
+                  }}
+                  placeholder="What should display when this hotspot is clicked?"
+                  className={`min-h-[88px] ${editorFieldClass}`}
+                  data-testid={`input-labeled-graphic-label-content-${contentBlock.id}`}
+                />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    value={selectedLabel.x ?? ""}
+                    onChange={(e) => {
+                      const nextLabels = [...labels];
+                      nextLabels[activeGraphicLabel] = { ...(nextLabels[activeGraphicLabel] || {}), x: e.target.value };
+                      setEditedContent({ ...content, labels: nextLabels });
+                    }}
+                    placeholder="X position"
+                    className={editorFieldClass}
+                    data-testid={`input-labeled-graphic-label-x-${contentBlock.id}`}
+                  />
+                  <Input
+                    value={selectedLabel.y ?? ""}
+                    onChange={(e) => {
+                      const nextLabels = [...labels];
+                      nextLabels[activeGraphicLabel] = { ...(nextLabels[activeGraphicLabel] || {}), y: e.target.value };
+                      setEditedContent({ ...content, labels: nextLabels });
+                    }}
+                    placeholder="Y position"
+                    className={editorFieldClass}
+                    data-testid={`input-labeled-graphic-label-y-${contentBlock.id}`}
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const nextLabels = [...labels];
+                    nextLabels.splice(activeGraphicLabel, 1);
+                    setEditedContent({ ...content, labels: nextLabels });
+                    setActiveGraphicLabel((prev) => Math.max(0, prev - 1));
+                  }}
+                  data-testid={`button-remove-labeled-graphic-label-${contentBlock.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {labels.length > 0 && selectedLabel ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Selected hotspot</div>
+            <h4 className="mt-2 font-medium text-slate-900">{selectedLabel.title || `Label ${activeGraphicLabel + 1}`}</h4>
+            <p className="mt-2 text-sm leading-7 text-slate-600">
+              {selectedLabel.content || "Add content to this label to explain the selected part of the graphic."}
+            </p>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500">Add hotspot labels to make this graphic interactive.</div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSortingActivityBlock = (content: any, editable = false) => {
+    const items: Array<{ index: number; text: string; category: string }> = (Array.isArray(content.items) ? content.items : []).map((item: any, index: number) => ({
+      index,
+      text: typeof item === "string" ? item : String(item?.text || ""),
+      category: typeof item === "string" ? "" : String(item?.category || ""),
+    }));
+    const categories: string[] = Array.isArray(content.categories) ? content.categories.map((category: any) => String(category || "")).filter(Boolean) : [];
+    const unassignedItems = items.filter((item: { index: number }) => !sortingAssignments[item.index]);
+    const currentSortingItem = unassignedItems[0] || null;
+    const feedbackItems: Array<{ index: number; text: string; category: string; isCorrect: boolean; leaving?: boolean }> = Object.entries(sortingFeedback).map(([key, feedback]) => ({ index: Number(key), ...feedback }));
+
+    return (
+      <div className="space-y-6" data-testid={`${editable ? "edit" : "content"}-sorting-activity-${contentBlock.id}`}>
+        {editable ? (
+          <Input
+            value={content.title || ""}
+            onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+            placeholder="Sorting activity title"
+            className={`${inlineInputClass} text-lg font-semibold text-slate-900`}
+            data-testid={`input-sorting-title-${contentBlock.id}`}
+          />
+        ) : content.title ? (
+          <h3 className="text-lg font-semibold text-slate-900">{content.title}</h3>
+        ) : null}
+
+        <div className="flex flex-col items-center gap-4">
+          {currentSortingItem ? (
+            <div
+              role="button"
+              tabIndex={0}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", String(currentSortingItem.index));
+                setDraggedSortingIndex(currentSortingItem.index);
+                setSelectedSortingIndex(currentSortingItem.index);
+              }}
+              onDragEnd={() => {
+                setDraggedSortingIndex(null);
+                setSortingHoverCategory(null);
+              }}
+              onClick={() => setSelectedSortingIndex(currentSortingItem.index)}
+              className={`flex min-h-[240px] w-full max-w-[340px] cursor-grab flex-col rounded-2xl border bg-white px-8 py-7 text-center shadow-sm transition-colors active:cursor-grabbing ${
+                selectedSortingIndex === currentSortingItem.index ? "border-slate-900" : "border-slate-200"
+              }`}
+              data-testid={`sorting-item-${currentSortingItem.index}-${contentBlock.id}`}
+            >
+              <div className="mb-6 text-2xl text-slate-700">&#8801;</div>
+              <div className="text-[15px] leading-10 text-slate-800">{currentSortingItem.text || `Item ${currentSortingItem.index + 1}`}</div>
+            </div>
+          ) : (
+            <div className="flex min-h-[240px] w-full max-w-[340px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-8 py-7 text-center shadow-sm">
+              <div className="text-sm font-medium uppercase tracking-[0.16em] text-slate-400">Result</div>
+              <div className="mt-4 text-3xl font-semibold text-slate-900">{items.filter((item: { index: number; category: string }) => item.category && sortingAssignments[item.index] === item.category).length}/{items.filter((item: { category: string }) => item.category).length || items.length}</div>
+              <div className="mt-2 text-sm text-slate-500">correct</div>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-6 rounded-full"
+                onClick={() => {
+                  setSortingAssignments({});
+                  setSortingChecked(false);
+                  setSelectedSortingIndex(null);
+                  setDraggedSortingIndex(null);
+                  setSortingHoverCategory(null);
+                  setSortingFeedback({});
+                }}
+                data-testid={`button-reset-sorting-${contentBlock.id}`}
+              >
+                Reset
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {categories.map((category: string, categoryIndex: number) => {
+            const categoryFeedbackItems = feedbackItems.filter((item: { category: string }) => item.category === category);
+            return (
+              <div
+                key={categoryIndex}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setSortingHoverCategory(category);
+                }}
+                onDragLeave={() => setSortingHoverCategory((prev) => (prev === category ? null : prev))}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const droppedIndex = Number(event.dataTransfer.getData("text/plain"));
+                  if (Number.isFinite(droppedIndex)) {
+                    assignSortingItem(droppedIndex, category);
+                  } else if (draggedSortingIndex !== null) {
+                    assignSortingItem(draggedSortingIndex, category);
+                  }
+                }}
+                className={`min-h-[220px] rounded-xl border px-6 py-8 text-center shadow-sm transition-colors ${
+                  sortingHoverCategory === category ? "border-slate-900 bg-slate-50/60" : "border-slate-300 bg-stone-100"
+                }`}
+                data-testid={`sorting-category-${categoryIndex}-${contentBlock.id}`}
+              >
+                {editable ? (
+                  <Input
+                    value={category}
+                    onChange={(e) => {
+                      const nextCategories = [...categories];
+                      nextCategories[categoryIndex] = e.target.value;
+                      setEditedContent({ ...content, categories: nextCategories });
+                    }}
+                    placeholder={`Category ${categoryIndex + 1}`}
+                    className={`${inlineInputClass} text-center text-[18px] font-medium leading-10 text-slate-800`}
+                    data-testid={`input-sorting-category-${categoryIndex}-${contentBlock.id}`}
+                  />
+                ) : (
+                  <div className="text-[18px] font-medium leading-10 text-slate-800">{category}</div>
+                )}
+                {categoryFeedbackItems.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {categoryFeedbackItems.map((item) => (
+                      <div
+                        key={`${item.text}-${item.index}`}
+                        className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-all duration-500 ${
+                          item.isCorrect ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                        } ${item.leaving ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100"}`}
+                      >
+                        <span>{item.text}</span>
+                        {item.isCorrect ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+
+        {editable ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-sm font-semibold text-slate-900">Categories</div>
+              {categories.map((category: string, index: number) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    value={category}
+                    onChange={(e) => {
+                      const nextCategories = [...categories];
+                      nextCategories[index] = e.target.value;
+                      setEditedContent({ ...content, categories: nextCategories });
+                    }}
+                    className={editorFieldClass}
+                    data-testid={`input-sorting-category-panel-${index}-${contentBlock.id}`}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const nextCategories = [...categories];
+                      nextCategories.splice(index, 1);
+                      setEditedContent({ ...content, categories: nextCategories });
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => setEditedContent({ ...content, categories: [...categories, ""] })}
+                data-testid={`button-add-sorting-category-${contentBlock.id}`}
+              >
+                Add category
+              </Button>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-sm font-semibold text-slate-900">Items</div>
+              {items.map((item: { index: number; text: string; category: string }, index: number) => (
+                <div key={index} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                  <Input
+                    value={item.text}
+                    onChange={(e) => {
+                      const nextItems = [...items];
+                      nextItems[index] = { ...nextItems[index], text: e.target.value };
+                      setEditedContent({ ...content, items: nextItems });
+                    }}
+                    className={editorFieldClass}
+                    data-testid={`input-sorting-item-text-${index}-${contentBlock.id}`}
+                  />
+                  <Select
+                    value={item.category || "__none__"}
+                    onValueChange={(value) => {
+                      const nextItems = [...items];
+                      nextItems[index] = { ...nextItems[index], category: value === "__none__" ? "" : value };
+                      setEditedContent({ ...content, items: nextItems });
+                    }}
+                  >
+                    <SelectTrigger className={editorFieldClass}>
+                      <SelectValue placeholder="Correct category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No category</SelectItem>
+                      {categories.map((category: string) => (
+                        <SelectItem key={category} value={category}>{category}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const nextItems = [...items];
+                      nextItems.splice(index, 1);
+                      setEditedContent({ ...content, items: nextItems });
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => setEditedContent({ ...content, items: [...items, { text: "", category: "" }] })}
+                data-testid={`button-add-sorting-item-${contentBlock.id}`}
+              >
+                Add item
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderProcessFlowBlock = (content: any, editable = false) => {
+    const steps = Array.isArray(content.steps) ? content.steps : [];
+    return (
+      <div className="space-y-4" data-testid={`${editable ? "edit" : "content"}-process-flow-${contentBlock.id}`}>
+        {editable ? (
+          <Input
+            value={content.title || ""}
+            onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+            placeholder="Process title"
+            className={`${inlineInputClass} text-lg font-semibold text-slate-900`}
+            data-testid={`input-process-flow-title-${contentBlock.id}`}
+          />
+        ) : content.title ? (
+          <h3 className="text-lg font-semibold text-slate-900">{content.title}</h3>
+        ) : null}
+
+        {steps.length > 0 ? (
+          <div className="space-y-6">
+            {steps.map((step: any, index: number) => (
+              <div key={index} className="relative flex items-start space-x-4">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50">
+                  <span className="font-semibold text-slate-700">{index + 1}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  {editable ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={step.title || ""}
+                        onChange={(e) => {
+                          const nextSteps = [...steps];
+                          nextSteps[index] = { ...(nextSteps[index] || {}), title: e.target.value };
+                          setEditedContent({ ...content, steps: nextSteps });
+                        }}
+                        placeholder={`Step ${index + 1}`}
+                        className={`${inlineInputClass} font-medium text-slate-900`}
+                        data-testid={`input-process-step-title-${index}-${contentBlock.id}`}
+                      />
+                      <Textarea
+                        value={step.description || ""}
+                        onChange={(e) => {
+                          const nextSteps = [...steps];
+                          nextSteps[index] = { ...(nextSteps[index] || {}), description: e.target.value };
+                          setEditedContent({ ...content, steps: nextSteps });
+                        }}
+                        placeholder="Describe this step"
+                        className={`${inlineTextareaClass} min-h-[72px] text-sm leading-7 text-slate-600`}
+                        data-testid={`input-process-step-description-${index}-${contentBlock.id}`}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const nextSteps = [...steps];
+                          nextSteps.splice(index, 1);
+                          setEditedContent({ ...content, steps: nextSteps });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <h5 className="mb-1 font-medium">{step.title || `Step ${index + 1}`}</h5>
+                      {step.description ? <p>{step.description}</p> : null}
+                    </>
+                  )}
+                </div>
+                {index < steps.length - 1 ? <div className="absolute left-5 top-11 h-6 w-px bg-slate-200"></div> : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-4 text-center text-muted-foreground">No process steps configured yet</div>
+        )}
+
+        {editable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={() => setEditedContent({ ...content, steps: [...steps, { title: "", description: "" }] })}
+            data-testid={`button-add-process-step-${contentBlock.id}`}
+          >
+            Add step
+          </Button>
+        ) : null}
+      </div>
+    );
+  };
 
   const renderEditorEmptyState = (title: string, description: string) => (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
@@ -1023,70 +2175,61 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
 
       case "heading":
         return (
-          <div className="space-y-3" data-testid={`edit-heading-${contentBlock.id}`}>
-            {renderEditorField(
-              "Heading",
-              <Input
-                value={content.text || ""}
-                onChange={(e) => setEditedContent({ ...content, text: e.target.value })}
-                placeholder="Add a clear section heading."
-                className={`text-lg font-semibold ${editorFieldClass}`}
-                data-testid={`input-heading-content-${contentBlock.id}`}
-              />,
-            )}
+          <div className="space-y-1" data-testid={`edit-heading-${contentBlock.id}`}>
+            <RichTextEditor
+              content={content.html || (content.text ? `<h2>${escapeHtml(content.text)}</h2>` : "")}
+              onChange={(html) => setEditedContent({ ...content, html, text: stripHtml(html) })}
+              placeholder="Add a clear section heading."
+              className="rise-heading-editor rounded-2xl border border-transparent bg-transparent px-4 py-2 shadow-none transition-colors group-hover:border-slate-200 focus-within:border-slate-300"
+              editorContentClassName="min-h-0 py-0"
+              data-testid={`input-heading-content-${contentBlock.id}`}
+            />
           </div>
         );
 
       case "statement":
         return (
-          <div className="space-y-3" data-testid={`edit-statement-${contentBlock.id}`}>
-            {renderEditorField(
-              "Statement",
-              <Textarea
-                value={content.text || ""}
-                onChange={(e) => setEditedContent({ ...content, text: e.target.value })}
-                placeholder="Highlight a key takeaway or important instruction."
-                className={editorTextareaClass}
-                data-testid={`input-statement-content-${contentBlock.id}`}
-              />,
-            )}
+          <div
+            className="overflow-visible rounded-r-lg border-l-4 border-slate-300 bg-transparent p-4"
+            data-testid={`edit-statement-${contentBlock.id}`}
+          >
+            <Textarea
+              value={content.text || ""}
+              onChange={(e) => setEditedContent({ ...content, text: e.target.value })}
+              placeholder="Highlight a key takeaway or important instruction."
+              className={`${inlineTextareaClass} whitespace-pre-wrap break-words leading-8 text-slate-800`}
+            />
           </div>
         );
 
       case "quote":
         return (
-          <div className="space-y-3" data-testid={`edit-quote-${contentBlock.id}`}>
-            {renderEditorField(
-              "Quote",
-              <Textarea
-                value={content.text || ""}
-                onChange={(e) => setEditedContent({ ...content, text: e.target.value })}
-                placeholder="Paste the quote or testimonial."
-                className={editorTextareaClass}
-                data-testid={`input-quote-text-${contentBlock.id}`}
-              />,
-            )}
-            <div className="grid gap-3 md:grid-cols-2">
-              {renderEditorField(
-                "Author",
-                <Input
-                  value={content.author || ""}
-                  onChange={(e) => setEditedContent({ ...content, author: e.target.value })}
-                  placeholder="Author name"
-                  className={editorFieldClass}
-                  data-testid={`input-quote-author-${contentBlock.id}`}
-                />,
-              )}
-              {renderEditorField(
-                "Citation",
-                <Input
-                  value={content.citation || ""}
-                  onChange={(e) => setEditedContent({ ...content, citation: e.target.value })}
-                  placeholder="Source or citation"
-                  className={editorFieldClass}
-                  data-testid={`input-quote-citation-${contentBlock.id}`}
-                />,
-              )}
+          <div
+            className="rounded-2xl border border-transparent bg-transparent p-4 transition-colors group-hover:border-slate-200 focus-within:border-slate-300"
+            data-testid={`edit-quote-${contentBlock.id}`}
+          >
+            <Textarea
+              value={content.text || ""}
+              onChange={(e) => setEditedContent({ ...content, text: e.target.value })}
+              placeholder="Paste the quote or testimonial."
+              className={`${inlineTextareaClass} min-h-[56px] text-lg italic text-slate-800`}
+            />
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+              <span className="font-medium">-</span>
+              <Input
+                value={content.author || ""}
+                onChange={(e) => setEditedContent({ ...content, author: e.target.value })}
+                placeholder="Author"
+                className={`${inlineInputClass} max-w-[220px] font-medium`}
+                data-testid={`input-quote-author-${contentBlock.id}`}
+              />
+              <Input
+                value={content.citation || ""}
+                onChange={(e) => setEditedContent({ ...content, citation: e.target.value })}
+                placeholder="Citation"
+                className={`${inlineInputClass} max-w-[260px] opacity-75`}
+                data-testid={`input-quote-citation-${contentBlock.id}`}
+              />
             </div>
           </div>
         );
@@ -1117,61 +2260,55 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
       case "audio":
       case "ai-audio":
         return (
-          <div className="space-y-3" data-testid={`edit-audio-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="Audio title"
-                className={editorFieldClass}
-                data-testid={`input-audio-title-${contentBlock.id}`}
-              />,
-            )}
-            {renderEditorField(
-              "Description",
-              <Textarea
-                value={content.description || ""}
-                onChange={(e) => setEditedContent({ ...content, description: e.target.value })}
-                placeholder="Describe what the learner will hear."
-                className={editorTextareaClass}
-                data-testid={`input-audio-description-${contentBlock.id}`}
-              />,
-            )}
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-              {renderEditorField(
-                "Audio URL",
+          <div
+            className="rounded-2xl border border-transparent bg-transparent p-4 transition-colors group-hover:border-slate-200 focus-within:border-slate-300"
+            data-testid={`edit-audio-${contentBlock.id}`}
+          >
+            <div className="mb-3 flex items-center space-x-4">
+              <div className="text-2xl">Audio</div>
+              <div className="flex-1 space-y-1">
                 <Input
-                  value={content.url || ""}
-                  onChange={(e) => setEditedContent({ ...content, url: e.target.value })}
-                  placeholder="Paste an audio URL"
-                  className={editorFieldClass}
-                  data-testid={`input-audio-url-${contentBlock.id}`}
-                />,
-              )}
-              {renderEditorField(
-                "Duration",
+                  value={content.title || ""}
+                  onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
+                  placeholder="Audio title"
+                  className={`${inlineInputClass} font-medium text-slate-900`}
+                  data-testid={`input-audio-title-${contentBlock.id}`}
+                />
+                <Textarea
+                  value={content.description || ""}
+                  onChange={(e) => setEditedContent({ ...content, description: e.target.value })}
+                  placeholder="Describe what the learner will hear."
+                  className={`${inlineTextareaClass} min-h-[48px] text-sm text-slate-500`}
+                  data-testid={`input-audio-description-${contentBlock.id}`}
+                />
                 <Input
                   value={content.duration || ""}
                   onChange={(e) => setEditedContent({ ...content, duration: e.target.value })}
-                  placeholder="2:30"
-                  className={editorFieldClass}
+                  placeholder="Duration"
+                  className={`${inlineInputClass} text-xs text-slate-400`}
                   data-testid={`input-audio-duration-${contentBlock.id}`}
-                />,
-              )}
+                />
+              </div>
+              <Button variant="outline" size="sm" disabled>
+                <Play className="h-4 w-4" />
+              </Button>
             </div>
-            {contentBlock.type === "ai-audio" && content.script && (
-              renderEditorField(
-                "Generated script",
-                <Textarea
-                  value={content.script || ""}
-                  onChange={(e) => setEditedContent({ ...content, script: e.target.value })}
-                  placeholder="AI-generated audio script"
-                  className="min-h-[140px] resize-none border-slate-200 bg-white shadow-none placeholder:text-slate-400 focus-visible:ring-slate-300"
-                  data-testid={`input-audio-script-${contentBlock.id}`}
-                />,
-              )
-            )}
+            <Input
+              value={content.url || ""}
+              onChange={(e) => setEditedContent({ ...content, url: e.target.value })}
+              placeholder="Paste an audio URL"
+              className={`${inlineInputClass} text-sm text-slate-500`}
+              data-testid={`input-audio-url-${contentBlock.id}`}
+            />
+            {contentBlock.type === "ai-audio" && content.script ? (
+              <Textarea
+                value={content.script || ""}
+                onChange={(e) => setEditedContent({ ...content, script: e.target.value })}
+                placeholder="AI-generated audio script"
+                className={`${inlineTextareaClass} mt-3 min-h-[88px] rounded-xl border border-slate-200 bg-transparent p-3 text-sm text-slate-700`}
+                data-testid={`input-audio-script-${contentBlock.id}`}
+              />
+            ) : null}
           </div>
         );
 
@@ -1313,50 +2450,47 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
 
       case "video":
         return (
-          <div className="space-y-3" data-testid={`edit-video-${contentBlock.id}`}>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-black" data-testid={`edit-video-${contentBlock.id}`}>
             {content.url && !String(content.url).startsWith("#") ? (
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-black">
-                <video
-                  src={content.url}
-                  controls
-                  className="aspect-video w-full"
-                  data-testid={`preview-video-${contentBlock.id}`}
-                />
+              <video
+                src={content.url}
+                controls
+                className="aspect-video w-full"
+                data-testid={`preview-video-${contentBlock.id}`}
+              />
+            ) : (
+              <div className="flex aspect-video items-center justify-center bg-gray-100">
+                <div className="text-center">
+                  <div className="mb-2 text-4xl">Video</div>
+                  <p className="text-gray-600">{content.title || "Video Content"}</p>
+                </div>
               </div>
-            ) : null}
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px]">
-              {renderEditorField(
-                "Title",
+            )}
+            <div className="space-y-2 border-t border-slate-200 bg-white px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
                 <Input
                   value={content.title || ""}
                   onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
                   placeholder="Video title"
-                  className={editorFieldClass}
+                  className={`${inlineInputClass} text-sm font-medium text-slate-900`}
                   data-testid={`input-video-title-${contentBlock.id}`}
-                />,
-              )}
-              {renderEditorField(
-                "Duration",
+                />
                 <Input
                   value={content.duration || ""}
                   onChange={(e) => setEditedContent({ ...content, duration: e.target.value })}
                   placeholder="15s"
-                  className={editorFieldClass}
+                  className={`${inlineInputClass} max-w-[88px] text-right text-xs text-slate-500`}
                   data-testid={`input-video-duration-${contentBlock.id}`}
-                />,
-              )}
-            </div>
-            {renderEditorField(
-              "Video URL",
+                />
+              </div>
               <Input
                 value={content.url || ""}
                 onChange={(e) => setEditedContent({ ...content, url: e.target.value })}
                 placeholder="Paste a hosted video URL"
-                className={editorFieldClass}
+                className={`${inlineInputClass} text-xs text-slate-500`}
                 data-testid={`input-video-url-${contentBlock.id}`}
-              />,
-              content.provider === "tavus" ? "Generated by Tavus and stored as a hosted video URL." : undefined,
-            )}
+              />
+            </div>
           </div>
         );
 
@@ -1371,950 +2505,76 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
         return renderAssignmentEditor();
 
       case "accordion":
-        return (
-          <div className="space-y-4" data-testid={`edit-accordion-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="Accordion title"
-                className={editorFieldClass}
-                data-testid={`input-accordion-title-${contentBlock.id}`}
-              />,
-            )}
-
-            {Array.isArray(content.items) && content.items.length > 0
-              ? renderEditorSection(
-                  `Items (${content.items.length})`,
-                  <div className="space-y-3">
-                    {content.items.map((item: any, index: number) => (
-                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Item {index + 1}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const items = [...(content.items || [])];
-                              items.splice(index, 1);
-                              setEditedContent({ ...content, items });
-                            }}
-                            data-testid={`button-remove-accordion-item-${index}-${contentBlock.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="space-y-3">
-                          <Input
-                            value={item.title || ""}
-                            onChange={(e) => {
-                              const items = [...(content.items || [])];
-                              items[index].title = e.target.value;
-                              setEditedContent({ ...content, items });
-                            }}
-                            placeholder="Item title"
-                            className={editorFieldClass}
-                            data-testid={`input-accordion-item-title-${index}-${contentBlock.id}`}
-                          />
-                          <Textarea
-                            value={item.content || ""}
-                            onChange={(e) => {
-                              const items = [...(content.items || [])];
-                              items[index].content = e.target.value;
-                              setEditedContent({ ...content, items });
-                            }}
-                            placeholder="Item content"
-                            className={`min-h-[88px] ${editorFieldClass}`}
-                            data-testid={`input-accordion-item-content-${index}-${contentBlock.id}`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>,
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const items = content.items || [];
-                      items.push({ title: "", content: "" });
-                      setEditedContent({ ...content, items });
-                    }}
-                    data-testid={`button-add-accordion-item-${contentBlock.id}`}
-                  >
-                    Add item
-                  </Button>,
-                  "Use short headings with optional supporting detail.",
-                )
-              : renderEditorSection(
-                  "Items",
-                  renderEditorEmptyState(
-                    "No accordion items yet",
-                    "Add the first accordion section to start structuring this block.",
-                  ),
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const items = content.items || [];
-                      items.push({ title: "", content: "" });
-                      setEditedContent({ ...content, items });
-                    }}
-                    data-testid={`button-add-accordion-item-${contentBlock.id}`}
-                  >
-                    Add item
-                  </Button>,
-                )}
-          </div>
-        );
+        return renderAccordionBlock(content, true);
 
       case "flashcards":
-        return (
-          <div className="space-y-4" data-testid={`edit-flashcards-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="Flashcards title"
-                className={editorFieldClass}
-                data-testid={`input-flashcards-title-${contentBlock.id}`}
-              />,
-            )}
-
-            {Array.isArray(content.cards) && content.cards.length > 0
-              ? renderEditorSection(
-                  `Cards (${content.cards.length})`,
-                  <div className="space-y-3">
-                    {content.cards.map((card: any, index: number) => (
-                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Card {index + 1}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const cards = [...(content.cards || [])];
-                              cards.splice(index, 1);
-                              setEditedContent({ ...content, cards });
-                            }}
-                            data-testid={`button-remove-flashcard-${index}-${contentBlock.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="space-y-3">
-                          <Input
-                            value={card.front || ""}
-                            onChange={(e) => {
-                              const cards = [...(content.cards || [])];
-                              cards[index].front = e.target.value;
-                              setEditedContent({ ...content, cards });
-                            }}
-                            placeholder="Prompt or term"
-                            className={editorFieldClass}
-                            data-testid={`input-flashcard-front-${index}-${contentBlock.id}`}
-                          />
-                          <Textarea
-                            value={card.back || ""}
-                            onChange={(e) => {
-                              const cards = [...(content.cards || [])];
-                              cards[index].back = e.target.value;
-                              setEditedContent({ ...content, cards });
-                            }}
-                            placeholder="Answer or explanation"
-                            className={`min-h-[88px] ${editorFieldClass}`}
-                            data-testid={`input-flashcard-back-${index}-${contentBlock.id}`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>,
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const cards = content.cards || [];
-                      cards.push({ front: "", back: "" });
-                      setEditedContent({ ...content, cards });
-                    }}
-                    data-testid={`button-add-flashcard-${contentBlock.id}`}
-                  >
-                    Add card
-                  </Button>,
-                  "Each card should contain a short prompt and a concise answer.",
-                )
-              : renderEditorSection(
-                  "Cards",
-                  renderEditorEmptyState(
-                    "No flashcards yet",
-                    "Add the first flashcard to create a quick recall activity.",
-                  ),
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const cards = content.cards || [];
-                      cards.push({ front: "", back: "" });
-                      setEditedContent({ ...content, cards });
-                    }}
-                    data-testid={`button-add-flashcard-${contentBlock.id}`}
-                  >
-                    Add card
-                  </Button>,
-                )}
-          </div>
-        );
+        return renderFlashcardsBlock(content, true);
 
       case "continue":
         return (
-          <div className="space-y-3" data-testid={`edit-continue-${contentBlock.id}`}>
-            {renderEditorField(
-              "Button label",
+          <div className="space-y-3 text-center" data-testid={`edit-continue-${contentBlock.id}`}>
+            <div className="inline-flex items-center space-x-2 rounded-full border border-slate-200 bg-white px-6 py-3 shadow-sm transition-colors hover:border-slate-300">
               <Input
                 value={content.text || ""}
                 onChange={(e) => setEditedContent({ ...content, text: e.target.value })}
-                placeholder="Continue to next lesson"
-                className={editorFieldClass}
+                placeholder="Continue"
+                className={`${inlineInputClass} min-w-[180px] text-center font-medium text-slate-800`}
                 data-testid={`input-continue-text-${contentBlock.id}`}
-              />,
-            )}
-            {renderEditorField(
-              "Destination URL",
-              <Input
-                value={content.url || ""}
-                onChange={(e) => setEditedContent({ ...content, url: e.target.value })}
-                placeholder="Optional link"
-                className={editorFieldClass}
-                data-testid={`input-continue-url-${contentBlock.id}`}
-              />,
-            )}
+              />
+              <span className="text-slate-400">→</span>
+            </div>
+            <div className="mx-auto flex max-w-[320px] flex-col items-center gap-2">
+              <Select
+                value={content.action || "next_lesson"}
+                onValueChange={(value) =>
+                  setEditedContent({
+                    ...content,
+                    action: value,
+                    url: value === "external_url" ? content.url || "" : "",
+                  })
+                }
+              >
+                <SelectTrigger className="border-slate-200 bg-white text-sm shadow-none">
+                  <SelectValue placeholder="Choose action" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="next_lesson">Go to next lesson</SelectItem>
+                  <SelectItem value="external_url">Open external URL</SelectItem>
+                </SelectContent>
+              </Select>
+              {(content.action || "next_lesson") === "external_url" ? (
+                <Input
+                  value={content.url || ""}
+                  onChange={(e) => setEditedContent({ ...content, url: e.target.value })}
+                  placeholder="https://example.com"
+                  className={`${inlineInputClass} text-center text-sm text-slate-500`}
+                  data-testid={`input-continue-url-${contentBlock.id}`}
+                />
+              ) : (
+                <div className="text-xs text-slate-400">
+                  {nextLessonPath ? "This button will open the next lesson in the course." : "No next lesson available."}
+                </div>
+              )}
+            </div>
           </div>
         );
 
       case "list":
-        return (
-          <div className="space-y-4" data-testid={`edit-list-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="List title"
-                className={editorFieldClass}
-                data-testid={`input-list-title-${contentBlock.id}`}
-              />,
-            )}
-            {renderEditorField(
-              "Style",
-              <div className="flex gap-2">
-                <Button
-                  variant={content.type === "ordered" ? "default" : "outline"}
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => setEditedContent({ ...content, type: "ordered" })}
-                  data-testid={`button-list-ordered-${contentBlock.id}`}
-                >
-                  Numbered
-                </Button>
-                <Button
-                  variant={content.type === "unordered" ? "default" : "outline"}
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => setEditedContent({ ...content, type: "unordered" })}
-                  data-testid={`button-list-unordered-${contentBlock.id}`}
-                >
-                  Bullets
-                </Button>
-              </div>,
-            )}
-            {Array.isArray(content.items) && content.items.length > 0
-              ? renderEditorSection(
-                  `Items (${content.items.length})`,
-                  <div className="space-y-3">
-                    {content.items.map((item: any, index: number) => (
-                      <div key={index} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
-                        <span className="w-8 text-sm font-semibold text-slate-500">
-                          {content.type === "ordered" ? `${index + 1}.` : "-"}
-                        </span>
-                        <Input
-                          value={item.text || ""}
-                          onChange={(e) => {
-                            const items = [...(content.items || [])];
-                            items[index].text = e.target.value;
-                            setEditedContent({ ...content, items });
-                          }}
-                          placeholder={`Item ${index + 1}`}
-                          className={editorFieldClass}
-                          data-testid={`input-list-item-${index}-${contentBlock.id}`}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            const items = [...(content.items || [])];
-                            items.splice(index, 1);
-                            setEditedContent({ ...content, items });
-                          }}
-                          data-testid={`button-remove-list-item-${index}-${contentBlock.id}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>,
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const items = content.items || [];
-                      items.push({ text: "" });
-                      setEditedContent({ ...content, items });
-                    }}
-                    data-testid={`button-add-list-item-${contentBlock.id}`}
-                  >
-                    Add item
-                  </Button>,
-                )
-              : renderEditorSection(
-                  "Items",
-                  renderEditorEmptyState(
-                    "No list items yet",
-                    "Add the first item to turn this into an ordered or bulleted list.",
-                  ),
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const items = content.items || [];
-                      items.push({ text: "" });
-                      setEditedContent({ ...content, items });
-                    }}
-                    data-testid={`button-add-list-item-${contentBlock.id}`}
-                  >
-                    Add item
-                  </Button>,
-                )}
-          </div>
-        );
+        return renderListBlock(content, true);
 
       case "timeline":
-        return (
-          <div className="space-y-4" data-testid={`edit-timeline-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="Timeline title"
-                className={editorFieldClass}
-                data-testid={`input-timeline-title-${contentBlock.id}`}
-              />,
-            )}
-
-            {Array.isArray(content.events) && content.events.length > 0
-              ? renderEditorSection(
-                  `Events (${content.events.length})`,
-                  <div className="space-y-3">
-                    {content.events.map((event: any, index: number) => (
-                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Event {index + 1}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const events = [...(content.events || [])];
-                              events.splice(index, 1);
-                              setEditedContent({ ...content, events });
-                            }}
-                            data-testid={`button-remove-timeline-event-${index}-${contentBlock.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
-                          <Input
-                            value={event.date || ""}
-                            onChange={(e) => {
-                              const events = [...(content.events || [])];
-                              events[index].date = e.target.value;
-                              setEditedContent({ ...content, events });
-                            }}
-                            placeholder="Date or milestone"
-                            className={editorFieldClass}
-                            data-testid={`input-timeline-event-date-${index}-${contentBlock.id}`}
-                          />
-                          <Input
-                            value={event.title || ""}
-                            onChange={(e) => {
-                              const events = [...(content.events || [])];
-                              events[index].title = e.target.value;
-                              setEditedContent({ ...content, events });
-                            }}
-                            placeholder="Event title"
-                            className={editorFieldClass}
-                            data-testid={`input-timeline-event-title-${index}-${contentBlock.id}`}
-                          />
-                        </div>
-                        <Textarea
-                          value={event.description || ""}
-                          onChange={(e) => {
-                            const events = [...(content.events || [])];
-                            events[index].description = e.target.value;
-                            setEditedContent({ ...content, events });
-                          }}
-                          placeholder="Event description"
-                          className={`mt-3 min-h-[88px] ${editorFieldClass}`}
-                          data-testid={`input-timeline-event-description-${index}-${contentBlock.id}`}
-                        />
-                      </div>
-                    ))}
-                  </div>,
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const events = content.events || [];
-                      events.push({ date: "", title: "", description: "" });
-                      setEditedContent({ ...content, events });
-                    }}
-                    data-testid={`button-add-timeline-event-${contentBlock.id}`}
-                  >
-                    Add event
-                  </Button>,
-                )
-              : renderEditorSection(
-                  "Events",
-                  renderEditorEmptyState(
-                    "No timeline events yet",
-                    "Add milestones to build an interactive timeline.",
-                  ),
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const events = content.events || [];
-                      events.push({ date: "", title: "", description: "" });
-                      setEditedContent({ ...content, events });
-                    }}
-                    data-testid={`button-add-timeline-event-${contentBlock.id}`}
-                  >
-                    Add event
-                  </Button>,
-                )}
-          </div>
-        );
+        return renderTimelineBlock(content, true);
 
       case "labeled-graphic":
-        return (
-          <div className="space-y-4" data-testid={`edit-labeled-graphic-${contentBlock.id}`}>
-            {renderEditorField(
-              "Image URL",
-              <Input
-                value={content.image?.url || ""}
-                onChange={(e) =>
-                  setEditedContent({
-                    ...content,
-                    image: { ...(content.image || {}), url: e.target.value },
-                  })
-                }
-                placeholder="Paste an image URL"
-                className={editorFieldClass}
-                data-testid={`input-labeled-graphic-image-url-${contentBlock.id}`}
-              />,
-            )}
-            {renderEditorField(
-              "Alt text",
-              <Input
-                value={content.image?.alt || ""}
-                onChange={(e) =>
-                  setEditedContent({
-                    ...content,
-                    image: { ...(content.image || {}), alt: e.target.value },
-                  })
-                }
-                placeholder="Describe the image for accessibility"
-                className={editorFieldClass}
-                data-testid={`input-labeled-graphic-image-alt-${contentBlock.id}`}
-              />,
-            )}
-
-            {Array.isArray(content.labels) && content.labels.length > 0
-              ? renderEditorSection(
-                  `Labels (${content.labels.length})`,
-                  <div className="space-y-3">
-                    {content.labels.map((label: any, index: number) => (
-                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Label {index + 1}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const labels = [...(content.labels || [])];
-                              labels.splice(index, 1);
-                              setEditedContent({ ...content, labels });
-                            }}
-                            data-testid={`button-remove-labeled-graphic-label-${index}-${contentBlock.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <Input
-                            value={label.title || ""}
-                            onChange={(e) => {
-                              const labels = [...(content.labels || [])];
-                              labels[index] = { ...labels[index], title: e.target.value };
-                              setEditedContent({ ...content, labels });
-                            }}
-                            placeholder="Label title"
-                            className={editorFieldClass}
-                            data-testid={`input-labeled-graphic-label-title-${index}-${contentBlock.id}`}
-                          />
-                          <Input
-                            value={label.x ?? ""}
-                            onChange={(e) => {
-                              const labels = [...(content.labels || [])];
-                              labels[index] = { ...labels[index], x: e.target.value };
-                              setEditedContent({ ...content, labels });
-                            }}
-                            placeholder="X position (%)"
-                            className={editorFieldClass}
-                            data-testid={`input-labeled-graphic-label-x-${index}-${contentBlock.id}`}
-                          />
-                          <Input
-                            value={label.y ?? ""}
-                            onChange={(e) => {
-                              const labels = [...(content.labels || [])];
-                              labels[index] = { ...labels[index], y: e.target.value };
-                              setEditedContent({ ...content, labels });
-                            }}
-                            placeholder="Y position (%)"
-                            className={editorFieldClass}
-                            data-testid={`input-labeled-graphic-label-y-${index}-${contentBlock.id}`}
-                          />
-                          <Textarea
-                            value={label.content || ""}
-                            onChange={(e) => {
-                              const labels = [...(content.labels || [])];
-                              labels[index] = { ...labels[index], content: e.target.value };
-                              setEditedContent({ ...content, labels });
-                            }}
-                            placeholder="What should display when this hotspot is clicked?"
-                            className={`min-h-[88px] ${editorFieldClass}`}
-                            data-testid={`input-labeled-graphic-label-content-${index}-${contentBlock.id}`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>,
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const nextIndex = Array.isArray(content.labels) ? content.labels.length : 0;
-                      const labels = [
-                        ...(content.labels || []),
-                        {
-                          title: "",
-                          content: "",
-                          x: Math.min(80, 20 + nextIndex * 15),
-                          y: Math.min(80, 25 + nextIndex * 12),
-                        },
-                      ];
-                      setEditedContent({ ...content, labels });
-                    }}
-                    data-testid={`button-add-labeled-graphic-label-${contentBlock.id}`}
-                  >
-                    Add label
-                  </Button>,
-                  "Use x and y values from 0 to 100 to place each hotspot on the image.",
-                )
-              : renderEditorSection(
-                  "Labels",
-                  renderEditorEmptyState(
-                    "No labels yet",
-                    "Add hotspot labels to make the graphic interactive.",
-                  ),
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const labels = [
-                        ...(content.labels || []),
-                        { title: "", content: "", x: 30, y: 30 },
-                      ];
-                      setEditedContent({ ...content, labels });
-                    }}
-                    data-testid={`button-add-labeled-graphic-label-${contentBlock.id}`}
-                  >
-                    Add label
-                  </Button>,
-                )}
-          </div>
-        );
+        return renderLabeledGraphicBlock(content, true);
 
       case "scenario":
-        return (
-          <div className="space-y-4" data-testid={`edit-scenario-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="Scenario title"
-                className={editorFieldClass}
-                data-testid={`input-scenario-title-${contentBlock.id}`}
-              />,
-            )}
-            {renderEditorField(
-              "Description",
-              <Textarea
-                value={content.description || ""}
-                onChange={(e) => setEditedContent({ ...content, description: e.target.value })}
-                placeholder="Describe the situation and learner decision point."
-                className={editorTextareaClass}
-                data-testid={`input-scenario-description-${contentBlock.id}`}
-              />,
-            )}
-
-            {Array.isArray(content.choices) && content.choices.length > 0
-              ? renderEditorSection(
-                  `Choices (${content.choices.length})`,
-                  <div className="space-y-3">
-                    {content.choices.map((choice: any, index: number) => (
-                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Choice {index + 1}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const choices = [...(content.choices || [])];
-                              choices.splice(index, 1);
-                              setEditedContent({ ...content, choices });
-                            }}
-                            data-testid={`button-remove-scenario-choice-${index}-${contentBlock.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="space-y-3">
-                          <Input
-                            value={choice.text || ""}
-                            onChange={(e) => {
-                              const choices = [...(content.choices || [])];
-                              choices[index] = { ...choices[index], text: e.target.value };
-                              setEditedContent({ ...content, choices });
-                            }}
-                            placeholder="Choice text"
-                            className={editorFieldClass}
-                            data-testid={`input-scenario-choice-text-${index}-${contentBlock.id}`}
-                          />
-                          <Textarea
-                            value={choice.feedback || choice.outcome || ""}
-                            onChange={(e) => {
-                              const choices = [...(content.choices || [])];
-                              choices[index] = {
-                                ...choices[index],
-                                feedback: e.target.value,
-                                outcome: e.target.value,
-                              };
-                              setEditedContent({ ...content, choices });
-                            }}
-                            placeholder="What should display after this choice is selected?"
-                            className={`min-h-[88px] ${editorFieldClass}`}
-                            data-testid={`input-scenario-choice-feedback-${index}-${contentBlock.id}`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>,
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const choices = [...(content.choices || []), { text: "", feedback: "", outcome: "" }];
-                      setEditedContent({ ...content, choices });
-                    }}
-                    data-testid={`button-add-scenario-choice-${contentBlock.id}`}
-                  >
-                    Add choice
-                  </Button>,
-                )
-              : renderEditorSection(
-                  "Choices",
-                  renderEditorEmptyState(
-                    "No scenario choices yet",
-                    "Add at least one decision path so learners can interact with the scenario.",
-                  ),
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const choices = [...(content.choices || []), { text: "", feedback: "", outcome: "" }];
-                      setEditedContent({ ...content, choices });
-                    }}
-                    data-testid={`button-add-scenario-choice-${contentBlock.id}`}
-                  >
-                    Add choice
-                  </Button>,
-                )}
-          </div>
-        );
+        return renderScenarioBlock(content, true);
 
       case "sorting-activity":
-        return (
-          <div className="space-y-4" data-testid={`edit-sorting-activity-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="Sorting activity title"
-                className={editorFieldClass}
-                data-testid={`input-sorting-title-${contentBlock.id}`}
-              />,
-            )}
-
-            {renderEditorSection(
-              `Categories (${sortingCategories.length})`,
-              <div className="space-y-3">
-                {sortingCategories.map((category: string, index: number) => (
-                  <div key={index} className="flex gap-2">
-                    <Input
-                      value={category}
-                      onChange={(e) => {
-                        const categories = [...(Array.isArray(editedContent.categories) ? editedContent.categories.map((value: any) => String(value || "")) : [])];
-                        categories[index] = e.target.value;
-                        setEditedContent({ ...editedContent, categories });
-                      }}
-                      placeholder={`Category ${index + 1}`}
-                      className={editorFieldClass}
-                      data-testid={`input-sorting-category-${index}-${contentBlock.id}`}
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        const categories = [...(Array.isArray(editedContent.categories) ? editedContent.categories.map((value: any) => String(value || "")) : [])];
-                        categories.splice(index, 1);
-                        setEditedContent({ ...editedContent, categories });
-                      }}
-                      data-testid={`button-remove-sorting-category-${index}-${contentBlock.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>,
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                onClick={() => {
-                  const categories = [...(Array.isArray(editedContent.categories) ? editedContent.categories.map((value: any) => String(value || "")) : [])];
-                  categories.push("");
-                  setEditedContent({ ...editedContent, categories });
-                }}
-                data-testid={`button-add-sorting-category-${contentBlock.id}`}
-              >
-                Add category
-              </Button>,
-            )}
-
-            {renderEditorSection(
-              `Items (${normalizedSortingItems.length})`,
-              <div className="space-y-3">
-                {normalizedSortingItems.map((item: any, index: number) => (
-                  <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="mb-3 flex items-center justify-between">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Item {index + 1}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const items = [...normalizedSortingItems];
-                          items.splice(index, 1);
-                          setEditedContent({ ...content, items });
-                        }}
-                        data-testid={`button-remove-sorting-item-${index}-${contentBlock.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-                      <Input
-                          value={item.text || ""}
-                          onChange={(e) => {
-                            const items = [...normalizedSortingItems];
-                            items[index].text = e.target.value;
-                            setEditedContent({ ...editedContent, items });
-                          }}
-                        placeholder="Item text"
-                        className={editorFieldClass}
-                        data-testid={`input-sorting-item-text-${index}-${contentBlock.id}`}
-                      />
-                      <Select
-                        value={item.category || "__none__"}
-                        onValueChange={(value) => {
-                          const items = [...normalizedSortingItems];
-                          items[index].category = value === "__none__" ? "" : value;
-                          setEditedContent({ ...editedContent, items });
-                        }}
-                      >
-                        <SelectTrigger className={editorFieldClass} data-testid={`select-sorting-item-category-${index}-${contentBlock.id}`}>
-                          <SelectValue placeholder="Correct category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">No category</SelectItem>
-                          {sortingCategories.map((category: string) => (
-                            <SelectItem key={category} value={category}>{category}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                ))}
-              </div>,
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                onClick={() => setEditedContent({ ...editedContent, items: [...normalizedSortingItems, { text: "", category: "" }] })}
-                data-testid={`button-add-sorting-item-${contentBlock.id}`}
-              >
-                Add item
-              </Button>,
-            )}
-          </div>
-        );
+        return renderSortingActivityBlock(content, true);
       case "process-flow":
-        return (
-          <div className="space-y-4" data-testid={`edit-process-flow-${contentBlock.id}`}>
-            {renderEditorField(
-              "Title",
-              <Input
-                value={content.title || ""}
-                onChange={(e) => setEditedContent({ ...content, title: e.target.value })}
-                placeholder="Process title"
-                className={editorFieldClass}
-                data-testid={`input-process-flow-title-${contentBlock.id}`}
-              />,
-            )}
-
-            {Array.isArray(content.steps) && content.steps.length > 0
-              ? renderEditorSection(
-                  `Steps (${content.steps.length})`,
-                  <div className="space-y-3">
-                    {content.steps.map((step: any, index: number) => (
-                      <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Step {index + 1}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const steps = [...(content.steps || [])];
-                              steps.splice(index, 1);
-                              setEditedContent({ ...content, steps });
-                            }}
-                            data-testid={`button-remove-process-step-${index}-${contentBlock.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="space-y-3">
-                          <Input
-                            value={step.title || ""}
-                            onChange={(e) => {
-                              const steps = [...(content.steps || [])];
-                              steps[index].title = e.target.value;
-                              setEditedContent({ ...content, steps });
-                            }}
-                            placeholder="Step title"
-                            className={editorFieldClass}
-                            data-testid={`input-process-step-title-${index}-${contentBlock.id}`}
-                          />
-                          <Textarea
-                            value={step.description || ""}
-                            onChange={(e) => {
-                              const steps = [...(content.steps || [])];
-                              steps[index].description = e.target.value;
-                              setEditedContent({ ...content, steps });
-                            }}
-                            placeholder="Describe this step"
-                            className={`min-h-[88px] ${editorFieldClass}`}
-                            data-testid={`input-process-step-description-${index}-${contentBlock.id}`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>,
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const steps = content.steps || [];
-                      steps.push({ title: "", description: "" });
-                      setEditedContent({ ...content, steps });
-                    }}
-                    data-testid={`button-add-process-step-${contentBlock.id}`}
-                  >
-                    Add step
-                  </Button>,
-                )
-              : renderEditorSection(
-                  "Steps",
-                  renderEditorEmptyState(
-                    "No process steps yet",
-                    "Add the first step to build a sequenced learner flow.",
-                  ),
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      const steps = content.steps || [];
-                      steps.push({ title: "", description: "" });
-                      setEditedContent({ ...content, steps });
-                    }}
-                    data-testid={`button-add-process-step-${contentBlock.id}`}
-                  >
-                    Add step
-                  </Button>,
-                )}
-          </div>
-        );
+        return renderProcessFlowBlock(content, true);
 
       default:
         return (
@@ -2356,8 +2616,8 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
       case "statement":
         const statementText = String(content.text || stripHtml(String(content.html || "")) || "This is an important statement that emphasizes key information.");
         return (
-          <div className="overflow-visible rounded-r-lg border-l-4 border-amber-400 bg-amber-50 p-4 dark:bg-amber-950" data-testid={`content-statement-${contentBlock.id}`}>
-            <p className="whitespace-pre-wrap break-words leading-8 text-amber-800 dark:text-amber-200">
+          <div className="overflow-visible rounded-r-lg border-l-4 border-slate-300 bg-transparent p-4" data-testid={`content-statement-${contentBlock.id}`}>
+            <p className="whitespace-pre-wrap break-words leading-8 text-slate-800">
               {statementText}
             </p>
           </div>
@@ -2365,14 +2625,22 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
 
       case "quote":
         return (
-          <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4" data-testid={`content-quote-${contentBlock.id}`}>
-            <blockquote className="text-indigo-800 dark:text-indigo-200 italic text-lg mb-3">
-              "{content.text || "This is a sample quote that provides valuable insights."}"
+          <div className="py-2" data-testid={`content-quote-${contentBlock.id}`}>
+            <blockquote className="relative max-w-3xl pt-6">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute left-0 top-0 select-none text-[7rem] font-semibold leading-none text-slate-200"
+              >
+                "
+              </div>
+              <p className="relative z-10 mt-2 text-xl italic leading-9 text-slate-800">
+                {content.text || "This is a sample quote that provides valuable insights."}
+              </p>
             </blockquote>
             {(content.author || content.citation) && (
-              <div className="text-indigo-600 dark:text-indigo-400 text-sm">
-                {content.author && <span className="font-medium">- {content.author}</span>}
-                {content.citation && <span className="ml-2 opacity-75">{content.citation}</span>}
+              <div className="mt-4 text-sm text-slate-500">
+                {content.author ? <span className="font-medium text-slate-700">- {content.author}</span> : null}
+                {content.citation ? <span className={content.author ? "ml-2" : ""}>{content.citation}</span> : null}
               </div>
             )}
           </div>
@@ -2465,14 +2733,14 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
       case "audio":
         const hasValidAudioUrl = content.url && !content.url.startsWith('#');
         return (
-          <div className="bg-pink-50 dark:bg-pink-950 border border-pink-200 dark:border-pink-800 rounded-lg p-4" data-testid={`content-audio-${contentBlock.id}`}>
+          <div className="p-4" data-testid={`content-audio-${contentBlock.id}`}>
             <div className="flex items-center space-x-4 mb-3">
               <div className="text-2xl">ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Âµ</div>
               <div className="flex-1">
-                <h4 className="font-medium text-pink-800 dark:text-pink-200">{content.title || "Audio Content"}</h4>
-                <p className="text-sm text-pink-600 dark:text-pink-400">{content.description || "Audio file or recording"}</p>
+                <h4 className="font-medium text-slate-900">{content.title || "Audio Content"}</h4>
+                <p className="text-sm text-slate-500">{content.description || "Audio file or recording"}</p>
                 {content.duration && (
-                  <p className="text-xs text-pink-500 dark:text-pink-500 mt-1">Duration: {content.duration}</p>
+                  <p className="mt-1 text-xs text-slate-400">Duration: {content.duration}</p>
                 )}
               </div>
               <Button 
@@ -2496,7 +2764,7 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
               />
             )}
             {!hasValidAudioUrl && (
-              <p className="text-xs text-pink-400 dark:text-pink-500 italic">No audio file available. Please provide a valid audio URL.</p>
+              <p className="text-xs italic text-slate-400">No audio file available. Please provide a valid audio URL.</p>
             )}
           </div>
         );
@@ -2527,421 +2795,60 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
         );
       
       case "flashcards":
-        return (
-          <div className="grid md:grid-cols-2 gap-4" data-testid={`content-flashcards-${contentBlock.id}`}>
-            {content.cards?.map((card: any, index: number) => (
-              <button
-                type="button"
-                key={index}
-                onClick={() => toggleFlashcard(index)}
-                className="group [perspective:1200px] text-left"
-                data-testid={`button-toggle-flashcard-${index}-${contentBlock.id}`}
-              >
-                <div
-                  className={`relative min-h-[220px] rounded-2xl transition-transform duration-500 [transform-style:preserve-3d] ${
-                    flippedFlashcards[index] ? "[transform:rotateY(180deg)]" : ""
-                  }`}
-                >
-                  <div className="absolute inset-0 flex min-h-[220px] flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm [backface-visibility:hidden] transition-colors group-hover:border-slate-300">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      Front {index + 1}
-                    </div>
-                    <div className="py-4">
-                      <h4 className="text-lg font-medium leading-relaxed text-slate-900">
-                        {card.front || `Flashcard ${index + 1}`}
-                      </h4>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-sm text-slate-500">
-                      <span>Click to flip</span>
-                      <RotateCw className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <div className="absolute inset-0 flex min-h-[220px] flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)] transition-colors group-hover:border-slate-300">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      Back {index + 1}
-                    </div>
-                    <div className="py-4">
-                      <h4 className="text-lg font-medium leading-relaxed text-slate-900">
-                        {card.back || "Answer appears on the reverse side of this flashcard."}
-                      </h4>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-sm text-slate-500">
-                      <span>Click to flip to front</span>
-                      <RotateCw className="h-4 w-4 rotate-180" />
-                    </div>
-                  </div>
-                </div>
-              </button>
-            )) || (
-              <div className="col-span-2 text-center text-muted-foreground">
-                No flashcards configured yet
-              </div>
-            )}
-          </div>
-        );
+        return renderFlashcardsBlock(content);
       
       case "accordion":
-        return (
-          <div className="space-y-2" data-testid={`content-accordion-${contentBlock.id}`}>
-            {(Array.isArray(content.items) ? content.items : []).slice(0, 3).map((item: any, index: number) => (
-              <div key={index} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between px-4 py-3 text-left"
-                  onClick={() => toggleAccordionItem(index)}
-                  data-testid={`button-toggle-accordion-item-${index}-${contentBlock.id}`}
-                >
-                  <h4 className="font-medium text-slate-900">{item.title || `Accordion Item ${index + 1}`}</h4>
-                  <ChevronDown
-                    className={`h-4 w-4 text-slate-500 transition-transform ${expandedAccordionItems[index] ? "rotate-180" : ""}`}
-                  />
-                </button>
-                {expandedAccordionItems[index] ? (
-                  <div className="border-t border-slate-100 px-4 py-3 text-sm text-slate-600">
-                    {item.content || "Content for this accordion section would appear here when expanded."}
-                  </div>
-                ) : null}
-              </div>
-            )) || (
-              <div className="text-center text-muted-foreground">
-                No accordion items configured yet
-              </div>
-            )}
-          </div>
-        );
+        return renderAccordionBlock(content);
 
       case "timeline":
-        const timelineEvents = (Array.isArray(content.events) ? content.events : []).slice(0, 6);
-        const selectedTimelineEvent = timelineEvents[activeTimelineEvent] || timelineEvents[0];
-        return (
-          <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]" data-testid={`content-timeline-${contentBlock.id}`}>
-            {timelineEvents.length > 0 ? (
-              <>
-                <div className="space-y-2">
-                  {timelineEvents.map((event: any, index: number) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => setActiveTimelineEvent(index)}
-                      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
-                        activeTimelineEvent === index
-                          ? "border-emerald-300 bg-emerald-50"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                      data-testid={`button-select-timeline-event-${index}-${contentBlock.id}`}
-                    >
-                      <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                        <div className="h-3 w-3 rounded-full bg-emerald-500" />
-                      </div>
-                      <div className="min-w-0">
-                        {event.date && (
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-                            {event.date}
-                          </div>
-                        )}
-                        <div className="mt-1 font-medium text-slate-900">{event.title || `Event ${index + 1}`}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  {selectedTimelineEvent?.date && (
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                      {selectedTimelineEvent.date}
-                    </div>
-                  )}
-                  <h4 className="mt-2 text-xl font-semibold text-slate-900">
-                    {selectedTimelineEvent?.title || "Timeline event"}
-                  </h4>
-                  <p className="mt-3 text-sm leading-7 text-slate-600">
-                    {selectedTimelineEvent?.description || "Select a timeline event to read the detail."}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <div className="text-center text-muted-foreground">
-                No timeline events configured yet
-              </div>
-            )}
-          </div>
-        );
+        return renderTimelineBlock(content);
 
       case "sorting-activity":
-        const previewSortingItems = (Array.isArray(content.items) ? content.items : []).map((item: any, index: number) => ({
-          index,
-          text: typeof item === "string" ? item : String(item?.text || ""),
-          category: typeof item === "string" ? "" : String(item?.category || ""),
-        }));
-        const previewSortingCategories = Array.isArray(content.categories)
-          ? content.categories.map((category: any) => String(category || "")).filter(Boolean)
-          : [];
-        const unassignedItems = previewSortingItems.filter((item: { index: number }) => !sortingAssignments[item.index]);
-        const currentSortingItem = unassignedItems[0] || null;
-        const completedSortingItems = previewSortingItems.filter((item: { index: number }) => sortingAssignments[item.index]);
-        const totalSortableItems = previewSortingItems.filter((item: { category: string }) => item.category).length || previewSortingItems.length;
-        const totalCorrectAssignments = previewSortingItems.filter((item: { index: number; category: string }) => {
-          const assignedCategory = sortingAssignments[item.index];
-          return item.category && assignedCategory === item.category;
-        }).length;
-        const sortingComplete = unassignedItems.length === 0 && previewSortingItems.length > 0;
-        const sortingFeedbackItems = Object.entries(sortingFeedback).map(([key, feedback]) => ({
-          index: Number(key),
-          ...feedback,
-        }));
-        return (
-          <div className="space-y-6" data-testid={`content-sorting-activity-${contentBlock.id}`}>
-            <div className="flex flex-col items-center gap-4">
-              {currentSortingItem ? (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", String(currentSortingItem.index));
-                    setDraggedSortingIndex(currentSortingItem.index);
-                    setSelectedSortingIndex(currentSortingItem.index);
-                  }}
-                  onDragEnd={() => {
-                    setDraggedSortingIndex(null);
-                    setSortingHoverCategory(null);
-                  }}
-                  onClick={() => setSelectedSortingIndex(currentSortingItem.index)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedSortingIndex(currentSortingItem.index);
-                    }
-                  }}
-                  className={`flex min-h-[240px] w-full max-w-[340px] cursor-grab flex-col rounded-2xl border bg-white px-8 py-7 text-center shadow-sm transition-colors active:cursor-grabbing ${
-                    selectedSortingIndex === currentSortingItem.index
-                      ? "border-indigo-300"
-                      : "border-slate-200"
-                  }`}
-                  data-testid={`sorting-item-${currentSortingItem.index}-${contentBlock.id}`}
-                >
-                  <div className="mb-6 text-2xl text-slate-700">&#8801;</div>
-                  <div className="text-[15px] leading-10 text-slate-800">
-                    {currentSortingItem.text || `Item ${currentSortingItem.index + 1}`}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex min-h-[240px] w-full max-w-[340px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-8 py-7 text-center shadow-sm">
-                  <div className="text-sm font-medium uppercase tracking-[0.16em] text-slate-400">Result</div>
-                  <div className="mt-4 text-3xl font-semibold text-slate-900">
-                    {totalCorrectAssignments}/{totalSortableItems}
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">correct</div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="mt-6 rounded-full"
-                    onClick={() => {
-                      setSortingAssignments({});
-                      setSortingChecked(false);
-                      setSelectedSortingIndex(null);
-                      setDraggedSortingIndex(null);
-                      setSortingHoverCategory(null);
-                      setSortingFeedback({});
-                    }}
-                    data-testid={`button-reset-sorting-${contentBlock.id}`}
-                  >
-                    Reset
-                  </Button>
-                </div>
-              )}
-
-              {currentSortingItem ? (
-                <div className="text-xs font-medium text-slate-500">
-                  Drag the card into a category below, or click the card and then click a category.
-                </div>
-              ) : null}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {previewSortingCategories.map((category: string, categoryIndex: number) => {
-                const assignedItems = previewSortingItems
-                  .filter((item: { index: number }) => sortingAssignments[item.index] === category);
-                const categoryFeedbackItems = sortingFeedbackItems.filter((item) => item.category === category);
-
-                return (
-                  <div
-                    key={category}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setSortingHoverCategory(category);
-                    }}
-                    onDragLeave={() => setSortingHoverCategory((prev) => (prev === category ? null : prev))}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      const droppedIndex = Number(event.dataTransfer.getData("text/plain"));
-                      if (Number.isFinite(droppedIndex)) {
-                        assignSortingItem(droppedIndex, category);
-                        return;
-                      }
-                      if (draggedSortingIndex !== null) {
-                        assignSortingItem(draggedSortingIndex, category);
-                      }
-                    }}
-                    className={`min-h-[220px] rounded-xl border px-6 py-8 text-center shadow-sm transition-colors ${
-                      sortingHoverCategory === category
-                        ? "border-indigo-400 bg-indigo-50/50"
-                        : "border-stone-300 bg-stone-100"
-                    }`}
-                    data-testid={`sorting-category-${categoryIndex}-${contentBlock.id}`}
-                  >
-                    <div className="text-[18px] font-medium leading-10 text-slate-800">{category}</div>
-                    {categoryFeedbackItems.length > 0 ? (
-                      <div className="mt-4 space-y-2">
-                        {categoryFeedbackItems.map((item) => {
-                          return (
-                            <div
-                              key={`${item.text}-${item.index}`}
-                              className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-all duration-500 ${
-                                item.isCorrect
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : "bg-rose-100 text-rose-800"
-                              } ${item.leaving ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100"}`}
-                            >
-                              <span>{item.text}</span>
-                              {item.isCorrect ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-
-          </div>
-        );
+        return renderSortingActivityBlock(content);
 
       case "labeled-graphic":
-        const previewLabels = Array.isArray(content.labels) ? content.labels : [];
-        const selectedGraphicLabel = previewLabels[activeGraphicLabel] || previewLabels[0];
-        return (
-          <div className="space-y-4" data-testid={`content-labeled-graphic-${contentBlock.id}`}>
-            <div className="bg-rose-100 dark:bg-rose-900 rounded-lg aspect-video flex items-center justify-center relative overflow-hidden">
-              <img 
-                src={content.image?.url || `https://picsum.photos/seed/labeled-${contentBlock.id}/600/400`} 
-                alt={content.image?.alt || "Labeled graphic"}
-                className="w-full h-full object-cover"
-              />
-              {previewLabels.map((label: any, index: number) => (
-                <button
-                  type="button"
-                  key={index}
-                  className={`absolute flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-bold text-white shadow-sm transition-all ${
-                    activeGraphicLabel === index
-                      ? "border-white bg-rose-700 scale-110"
-                      : "border-rose-100 bg-rose-500 hover:bg-rose-600"
-                  }`}
-                  style={{ 
-                    left: `${typeof label.x === "number" || /^\d+(\.\d+)?$/.test(String(label.x || "")) ? Number(label.x) : 20 + index * 25}%`, 
-                    top: `${typeof label.y === "number" || /^\d+(\.\d+)?$/.test(String(label.y || "")) ? Number(label.y) : 30 + index * 20}%`,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                  title={label.title || label.content || `Label ${index + 1}`}
-                  onClick={() => setActiveGraphicLabel(index)}
-                  data-testid={`button-labeled-graphic-label-${index}-${contentBlock.id}`}
-                >
-                  {index + 1}
-                </button>
-              ))}
-            </div>
-            {previewLabels.length > 0 && selectedGraphicLabel ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-800 dark:bg-rose-950/60">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-500 dark:text-rose-300">
-                  Selected hotspot
-                </div>
-                <h4 className="mt-2 font-medium text-rose-900 dark:text-rose-100">
-                  {selectedGraphicLabel.title || `Label ${activeGraphicLabel + 1}`}
-                </h4>
-                <p className="mt-2 text-sm leading-7 text-rose-700 dark:text-rose-200">
-                  {selectedGraphicLabel.content || "Add content to this label to explain the selected part of the graphic."}
-                </p>
-              </div>
-            ) : (
-              <div className="text-sm text-rose-600 dark:text-rose-400">
-                Add hotspot labels to make this graphic interactive.
-              </div>
-            )}
-          </div>
-        );
+        return renderLabeledGraphicBlock(content);
 
       case "scenario":
-        const scenarioChoices = Array.isArray(content.choices) ? content.choices : [];
-        const activeChoice = selectedScenarioChoice !== null ? scenarioChoices[selectedScenarioChoice] : null;
-        return (
-          <div className="bg-violet-50 dark:bg-violet-950 border border-violet-200 dark:border-violet-800 rounded-lg p-4" data-testid={`content-scenario-${contentBlock.id}`}>
-            <div className="flex items-start space-x-3">
-              <div className="rounded-full bg-violet-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-violet-800 dark:bg-violet-800 dark:text-violet-100">Scenario</div>
-              <div className="flex-1">
-                <h4 className="font-medium text-violet-800 dark:text-violet-200 mb-2">
-                  {content.title || "Interactive Scenario"}
-                </h4>
-                <p className="text-sm text-violet-600 dark:text-violet-400 mb-3">
-                  {content.description || "This scenario presents learners with realistic situations and decision-making opportunities."}
-                </p>
-                {scenarioChoices.length > 0 && (
-                  <div className="space-y-2">
-                    {scenarioChoices.map((choice: any, index: number) => (
-                      <button 
-                        key={index}
-                        type="button"
-                        onClick={() => setSelectedScenarioChoice(index)}
-                        className={`w-full rounded p-2 text-left text-sm transition-colors ${
-                          selectedScenarioChoice === index
-                            ? "bg-violet-700 text-white"
-                            : "bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900 dark:text-violet-300 dark:hover:bg-violet-800"
-                        }`}
-                        data-testid={`button-scenario-choice-${index}-${contentBlock.id}`}
-                      >
-                        {choice.text || `Choice ${index + 1}`}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {activeChoice && (
-                  <div className="mt-4 rounded-xl border border-violet-200 bg-white p-3 text-sm text-violet-800 shadow-sm dark:border-violet-700 dark:bg-violet-900/60 dark:text-violet-100">
-                    {activeChoice.feedback || activeChoice.outcome || "Add feedback to this choice in edit mode to display the learner outcome."}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
+        return renderScenarioBlock(content);
 
       case "continue":
         return (
           <div className="text-center py-6" data-testid={`content-continue-${contentBlock.id}`}>
-            <a href={content.url || undefined} className="inline-flex items-center space-x-2 rounded-full border border-slate-200 bg-white px-6 py-3 shadow-sm transition-colors hover:border-slate-300" data-testid={`link-continue-${contentBlock.id}`}>
+            <button
+              type="button"
+              onClick={() => handleContinueAction(content)}
+              disabled={(content.action || "next_lesson") === "next_lesson" && !nextLessonPath}
+              className="inline-flex items-center space-x-2 rounded-full border border-slate-200 bg-white px-6 py-3 shadow-sm transition-colors hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+              data-testid={`link-continue-${contentBlock.id}`}
+            >
               <span className="font-medium text-slate-800">
                 {content.text || "Continue"}
               </span>
-              <span className="text-slate-400">â†’</span>
-            </a>
+              <span className="text-slate-400">→</span>
+            </button>
           </div>
         );
+
+      case "list":
+        return renderListBlock(content);
 
       case "ai-audio":
         const hasValidAiAudioUrl = content.url && !content.url.startsWith('#');
         return (
-          <div className="rise-content bg-pink-50 dark:bg-pink-950 border border-pink-200 dark:border-pink-800 rounded-lg p-4" data-testid={`content-ai-audio-${contentBlock.id}`}>
+          <div className="rise-content p-4" data-testid={`content-ai-audio-${contentBlock.id}`}>
             <div className="flex items-start space-x-4 mb-3">
               <div className="text-2xl">🎵</div>
               <div className="flex-1">
-                <h4 className="font-medium text-pink-800 dark:text-pink-200">{content.title || "AI Generated Audio"}</h4>
-                <p className="mb-2 text-pink-600 dark:text-pink-400">{content.description || "Audio narration generated by AI"}</p>
+                <h4 className="font-medium text-slate-900">{content.title || "AI Generated Audio"}</h4>
+                <p className="mb-2 text-slate-500">{content.description || "Audio narration generated by AI"}</p>
                 {content.duration && (
-                  <p className="mb-2 text-pink-500 dark:text-pink-500">Duration: {content.duration}</p>
+                  <p className="mb-2 text-slate-400">Duration: {content.duration}</p>
                 )}
                 {content.script && (
                   <div className="mt-3">
-                    <p className="mb-1 font-medium text-pink-700 dark:text-pink-300">Script Preview:</p>
-                    <p className="max-h-20 overflow-y-auto rounded-xl bg-white dark:bg-pink-900 p-2 text-pink-600 dark:text-pink-400">
+                    <p className="mb-1 font-medium text-slate-700">Script Preview:</p>
+                    <p className="max-h-20 overflow-y-auto rounded-xl border border-slate-200 bg-transparent p-2 text-slate-500">
                       {content.script.length > 200 ? `${content.script.substring(0, 200)}...` : content.script}
                     </p>
                   </div>
@@ -2968,11 +2875,11 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
               />
             )}
             {!hasValidAiAudioUrl && (
-              <div className="mt-2 rounded-xl bg-pink-100 dark:bg-pink-900 p-3">
-                <p className="text-pink-600 dark:text-pink-400">
+              <div className="mt-2 rounded-xl border border-slate-200 bg-transparent p-3">
+                <p className="text-slate-500">
                   ⚠️ Audio generation is currently using placeholder URLs. To enable actual audio playback:
                 </p>
-                <ul className="text-pink-600 dark:text-pink-400 mt-2 ml-4 list-disc">
+                <ul className="mt-2 ml-4 list-disc text-slate-500">
                   <li>Add a text-to-speech service (e.g., Google Cloud TTS, Amazon Polly, or ElevenLabs)</li>
                   <li>Or manually provide an audio URL in edit mode</li>
                 </ul>
@@ -3187,43 +3094,7 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
         );
 
       case "process-flow":
-        return (
-          <div className="rise-content space-y-4" data-testid={`content-process-flow-${contentBlock.id}`}>
-            {content.title && (
-              <h4 className="mb-4 font-medium">{content.title}</h4>
-            )}
-            {Array.isArray(content.steps) && content.steps.length > 0 ? (
-              <div className="space-y-6">
-                {content.steps.map((step: any, index: number) => (
-                  <div key={index} className="relative flex items-start space-x-4">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50">
-                      <span className="font-semibold text-slate-700">
-                        {index + 1}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h5 className="mb-1 font-medium">
-                        {step.title || `Step ${index + 1}`}
-                      </h5>
-                      {step.description && (
-                        <p>
-                          {step.description}
-                        </p>
-                      )}
-                    </div>
-                    {index < content.steps.length - 1 && (
-                      <div className="absolute left-5 top-11 h-6 w-px bg-slate-200"></div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center text-muted-foreground py-4">
-                No process steps configured yet
-              </div>
-            )}
-          </div>
-        );
+        return renderProcessFlowBlock(content);
 
       default:
         return (
@@ -3303,7 +3174,7 @@ export default function ContentBlockComponent({ contentBlock, previewMode = fals
         </div>
       )}
       <div 
-        className="rise-shell rise-editor-surface rise-content content-block border-b border-slate-200 bg-transparent py-1 last:border-b-0"
+        className="rise-shell rise-preview-surface rise-content content-block-preview border-b border-slate-200 bg-transparent py-4 last:border-b-0"
         data-testid={`content-block-${contentBlock.id}`}
       >
         {renderEditingInterface()}

@@ -272,6 +272,30 @@
   margin: 1.5rem 0 0.7rem;
 }
 
+.rise-heading-editor .ProseMirror {
+  min-height: 0;
+  font-family: var(--rise-heading-font);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.012em;
+}
+
+.rise-heading-editor .ProseMirror h1,
+.rise-heading-editor .ProseMirror h2,
+.rise-heading-editor .ProseMirror h3,
+.rise-heading-editor .ProseMirror p {
+  margin: 0;
+}
+
+.rise-heading-editor .ProseMirror > *:last-child {
+  margin-bottom: 0;
+}
+
+.rise-heading-editor .ProseMirror h2 {
+  line-height: 1.22;
+}
+
 .rise-rich-editor .ProseMirror ul,
 .rise-rich-editor .ProseMirror ol,
 .rise-content ul,

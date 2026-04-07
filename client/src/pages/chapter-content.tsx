@@ -357,6 +357,12 @@ export default function ModuleContent() {
     });
   }, []);
 
+  const updateBlockContent = useCallback((blockId: string, content: Record<string, any>) => {
+    setOrderedBlocks((prevBlocks) =>
+      prevBlocks.map((block) => (block.id === blockId ? { ...block, content } : block)),
+    );
+  }, []);
+
   const createContentBlockMutation = useMutation({
     mutationFn: async (blockData: { type: string; content: unknown; order: string; metadata?: Record<string, unknown> }) => {
       const response = await apiRequest("POST", `/api/modules/${moduleId}/content-blocks`, blockData);
@@ -1381,6 +1387,7 @@ export default function ModuleContent() {
                           <ContentBlockComponent
                             contentBlock={block}
                             onMoveBlock={moveBlock}
+                            onContentChange={updateBlockContent}
                           />
                             <div
                               ref={activeInsertIndex === index + 1 ? activeInsertMenuRef : null}
