@@ -9,7 +9,6 @@ const GUEST_USERNAME = "Guest";
 const PASSWORD_PREFIX = "scrypt";
 const SCRYPT_KEYLEN = 64;
 const AUTH_COOKIE_NAME = "opuslearn.auth";
-const AUTH_COOKIE_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
 
 export type AuthUser = {
   id: string;
@@ -133,7 +132,7 @@ function parseCookies(headerValue: string | undefined) {
 }
 
 function buildAuthToken(userId: string) {
-  const expiresAt = Date.now() + AUTH_COOKIE_MAX_AGE_MS;
+  const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
   const payload = `${userId}.${expiresAt}`;
   const encodedPayload = toBase64Url(payload);
   const signature = signCookiePayload(encodedPayload);
@@ -188,7 +187,6 @@ function buildCookieString(token: string, secure: boolean) {
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
-    `Max-Age=${Math.floor(AUTH_COOKIE_MAX_AGE_MS / 1000)}`,
   ];
 
   if (secure) {

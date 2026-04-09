@@ -1,5 +1,5 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Eye, PanelLeft, Plus, Sparkles, Upload } from "lucide-react";
 import { DndProvider } from "react-dnd";
@@ -63,12 +63,11 @@ const surfaceClass = "bg-white";
 export default function ModuleContent() {
   const [, params] = useRoute("/module/:moduleId/content/:contentBlockId?");
   const moduleId = params?.moduleId as string;
-  const contentBlockId = params?.contentBlockId as string | undefined;
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const [isPreviewMode, setIsPreviewMode] = useState(false);
-  const [orderedBlocks, setOrderedBlocks] = useState<ContentBlock[]>([]);
+  const [orderedBlocksByModule, setOrderedBlocksByModule] = useState<Record<string, ContentBlock[]>>({});
   const [isNavVisible, setIsNavVisible] = useState(() => {
     const saved = localStorage.getItem("courseNavVisible");
     return saved !== null ? JSON.parse(saved) : true;
@@ -79,9 +78,13 @@ export default function ModuleContent() {
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null);
   const [aiPrompt, setAiPrompt] = useState("");
   const [isAiSubmitting, setIsAiSubmitting] = useState(false);
-  const [activeInsertIndex, setActiveInsertIndex] = useState<number | null>(null);
+  const [activeInsertKey, setActiveInsertKey] = useState<string | null>(null);
+  const [activeToolbarModuleId, setActiveToolbarModuleId] = useState<string | null>(null);
+  const [hoveredToolbarModuleId, setHoveredToolbarModuleId] = useState<string | null>(null);
   const [isAiVideoDialogOpen, setIsAiVideoDialogOpen] = useState(false);
   const [aiVideoInsertIndex, setAiVideoInsertIndex] = useState<number | null>(null);
+  const [aiVideoTargetModuleId, setAiVideoTargetModuleId] = useState<string | null>(null);
+  const [aiVideoTargetChapterTitle, setAiVideoTargetChapterTitle] = useState<string | null>(null);
   const [ltiPlatformName, setLtiPlatformName] = useState("");
   const [ltiPlatformIssuer, setLtiPlatformIssuer] = useState("");
   const [ltiClientId, setLtiClientId] = useState("");
@@ -91,13 +94,11 @@ export default function ModuleContent() {
   const [ltiKeysetUrl, setLtiKeysetUrl] = useState("");
 
   const [ltiPublishResult, setLtiPublishResult] = useState<LtiPublishResult | null>(null);
-  const [courseTitleDraft, setCourseTitleDraft] = useState("");
-  const [courseObjectiveDraft, setCourseObjectiveDraft] = useState("");
 
-  const isUpdatingFromServerRef = useRef(false);
+  const isUpdatingFromServerRef = useRef<Set<string>>(new Set());
   const activeInsertMenuRef = useRef<HTMLDivElement | null>(null);
-  const courseTitleRef = useRef<HTMLHeadingElement | null>(null);
-  const courseObjectiveRef = useRef<HTMLParagraphElement | null>(null);
+  const mainScrollRef = useRef<HTMLElement | null>(null);
+  const lastScrolledHashRef = useRef<string | null>(null);
 
   const parseObjectives = (value?: string | null) =>
     String(value || "")
@@ -106,6 +107,19 @@ export default function ModuleContent() {
       .filter(Boolean);
   const objectivesToParagraph = (items: string[], maxItems: number) =>
     items.slice(0, maxItems).join(" ");
+  const sortByOrder = <T extends { order: string }>(items: T[]) =>
+    [...items].sort((a, b) => parseInt(a.order) - parseInt(b.order));
+  const blockHasVisibleContent = (block: ContentBlock) => {
+    const content = (block.content || {}) as Record<string, any>;
+
+    if (block.type === "text" || block.type === "ai-text") {
+      const plainText = String(content.text || "").trim();
+      const plainHtml = String(content.html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      return Boolean(plainText || plainHtml);
+    }
+
+    return true;
+  };
 
   const { data: module, isInitialLoading: moduleInitialLoading } = useQuery<Module>({
     queryKey: ["/api/modules", moduleId],
@@ -128,30 +142,6 @@ export default function ModuleContent() {
     placeholderData: (previousData: Module[] | undefined) => previousData,
   });
 
-  const { data: contentBlocks, isInitialLoading: blocksInitialLoading } = useQuery<ContentBlock[]>({
-    queryKey: ["/api/modules", moduleId, "content-blocks"],
-    enabled: !!moduleId,
-    staleTime: 10000,
-    placeholderData: (previousData: ContentBlock[] | undefined) => previousData,
-  });
-
-  useEffect(() => {
-    if (!contentBlockId && contentBlocks && contentBlocks.length > 0) {
-      const firstBlock = [...contentBlocks].sort((a, b) => parseInt(a.order) - parseInt(b.order))[0];
-      setLocation(`/module/${moduleId}/content/${firstBlock.id}`, { replace: true });
-    }
-  }, [contentBlockId, contentBlocks, moduleId, setLocation]);
-
-  useEffect(() => {
-    if (contentBlocks) {
-      isUpdatingFromServerRef.current = true;
-      setOrderedBlocks([...contentBlocks].sort((a, b) => parseInt(a.order) - parseInt(b.order)));
-      setTimeout(() => {
-        isUpdatingFromServerRef.current = false;
-      }, 100);
-    }
-  }, [contentBlocks]);
-
   useEffect(() => {
     localStorage.setItem("courseNavVisible", JSON.stringify(isNavVisible));
   }, [isNavVisible]);
@@ -162,6 +152,20 @@ export default function ModuleContent() {
     : undefined;
   const displayModule = parentModule ?? currentModule;
   const displayChapter = parentModule ? currentModule : undefined;
+  const pageSections = useMemo(() => {
+    if (!displayModule) {
+      return [];
+    }
+
+    const childLessons = sortByOrder(
+      (courseModules || []).filter((candidate) => candidate.parentModuleId === displayModule.id),
+    );
+
+    return [
+      { module: displayModule, kind: "module" as const },
+      ...childLessons.map((lesson) => ({ module: lesson, kind: "lesson" as const })),
+    ];
+  }, [courseModules, displayModule]);
   const chapterOptions = useMemo(() => {
     const chapters = (courseModules || [])
       .filter((candidate) => candidate.parentModuleId)
@@ -194,51 +198,153 @@ export default function ModuleContent() {
       return null;
     }
 
-    const topLevelModules = courseModules
-      .filter((candidate: any) => !candidate.parentModuleId)
-      .sort((a, b) => parseInt(a.order) - parseInt(b.order));
-
-    for (const topLevelModule of topLevelModules) {
-      const chapters = courseModules
-        .filter((candidate: any) => candidate.parentModuleId === topLevelModule.id)
-        .sort((a, b) => parseInt(a.order) - parseInt(b.order));
-      if (chapters.length > 0) {
-        return `/module/${chapters[0].id}/content`;
-      }
-      return `/module/${topLevelModule.id}/content`;
-    }
-
-    return null;
+    const topLevelModules = sortByOrder(courseModules.filter((candidate: any) => !candidate.parentModuleId));
+    return topLevelModules[0] ? `/module/${topLevelModules[0].id}/content` : null;
   }, [courseModules]);
 
-  const courseObjectives = parseObjectives(course?.learningObjectives);
   const moduleObjectives = parseObjectives(displayModule?.description);
-  const courseObjectivesParagraph = objectivesToParagraph(courseObjectives, 5);
   const moduleObjectivesParagraph = objectivesToParagraph(moduleObjectives, 3);
   const chapterSummary = String(displayChapter?.description || "").replace(/<[^>]*>/g, "").trim();
+  const sectionByModuleId = useMemo(
+    () =>
+      pageSections.reduce<Record<string, (typeof pageSections)[number]>>((accumulator, section) => {
+        accumulator[section.module.id] = section;
+        return accumulator;
+      }, {}),
+    [pageSections],
+  );
+  const renderedSections = useMemo(
+    () =>
+      pageSections.filter((section) => {
+        const visibleBlocks = (orderedBlocksByModule[section.module.id] || []).filter(blockHasVisibleContent);
+        return section.kind === "lesson" || visibleBlocks.length > 0 || pageSections.length === 1;
+      }),
+    [pageSections, orderedBlocksByModule],
+  );
+
+  const sectionContentQueries = useQueries({
+    queries: pageSections.map((section) => ({
+      queryKey: ["/api/modules", section.module.id, "content-blocks"],
+      queryFn: async () => {
+        const response = await apiRequest("GET", `/api/modules/${section.module.id}/content-blocks`);
+        return response.json() as Promise<ContentBlock[]>;
+      },
+      enabled: !!section.module.id,
+      staleTime: 10000,
+    })),
+  });
+
+  const blocksInitialLoading = sectionContentQueries.some((query) => query.isInitialLoading);
+  const sectionContentStateKey = sectionContentQueries
+    .map((query) => `${query.dataUpdatedAt}:${query.isInitialLoading ? "1" : "0"}`)
+    .join("|");
 
   useEffect(() => {
-    setCourseTitleDraft(course?.title ?? "");
-    setCourseObjectiveDraft(objectivesToParagraph(parseObjectives(course?.learningObjectives), 5));
-  }, [course?.learningObjectives, course?.title]);
-
-  useEffect(() => {
-    if (courseTitleRef.current && document.activeElement !== courseTitleRef.current) {
-      courseTitleRef.current.textContent = courseTitleDraft;
+    if (pageSections.length === 0) {
+      setOrderedBlocksByModule({});
+      return;
     }
-  }, [courseTitleDraft]);
+
+    const nextState: Record<string, ContentBlock[]> = {};
+    for (let index = 0; index < pageSections.length; index += 1) {
+      const section = pageSections[index];
+      nextState[section.module.id] = sortByOrder(sectionContentQueries[index]?.data || []);
+      isUpdatingFromServerRef.current.add(section.module.id);
+    }
+
+    setOrderedBlocksByModule(nextState);
+
+    const timeoutId = window.setTimeout(() => {
+      for (const section of pageSections) {
+        isUpdatingFromServerRef.current.delete(section.module.id);
+      }
+    }, 100);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [pageSections, sectionContentStateKey]);
 
   useEffect(() => {
-    if (courseObjectiveRef.current && document.activeElement !== courseObjectiveRef.current) {
-      courseObjectiveRef.current.textContent = courseObjectiveDraft;
+    if (module?.parentModuleId) {
+      setLocation(`/module/${module.parentModuleId}/content#lesson-${module.id}`, { replace: true });
     }
-  }, [courseObjectiveDraft]);
+  }, [module?.id, module?.parentModuleId, setLocation]);
 
   useEffect(() => {
     if (!moduleInitialLoading && !module && fallbackModuleLocation && fallbackModuleLocation !== `/module/${moduleId}/content`) {
       setLocation(fallbackModuleLocation, { replace: true });
     }
   }, [fallbackModuleLocation, module, moduleId, moduleInitialLoading, setLocation]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      lastScrolledHashRef.current = null;
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (!displayModule) {
+      return;
+    }
+
+    const hash = window.location.hash;
+    if (!hash || lastScrolledHashRef.current === hash) {
+      return;
+    }
+
+    const target = document.querySelector(hash);
+    if (target instanceof HTMLElement) {
+      window.setTimeout(() => {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        lastScrolledHashRef.current = hash;
+      }, 50);
+    }
+  }, [displayModule, moduleId]);
+
+  useEffect(() => {
+    if (isPreviewMode || renderedSections.length === 0) {
+      return;
+    }
+
+    const container = mainScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const updateActiveToolbar = () => {
+      const containerRect = container.getBoundingClientRect();
+      const focusLine = containerRect.top + Math.min(container.clientHeight * 0.45, 320);
+      let nextModuleId = renderedSections[0]?.module.id ?? null;
+
+      for (const section of renderedSections) {
+        const element = container.querySelector<HTMLElement>(`[data-section-id="${section.module.id}"]`);
+        if (!element) {
+          continue;
+        }
+
+        const rect = element.getBoundingClientRect();
+        if (rect.top <= focusLine && rect.bottom >= containerRect.top + 120) {
+          nextModuleId = section.module.id;
+        }
+      }
+
+      setActiveToolbarModuleId(nextModuleId);
+      setHoveredToolbarModuleId((current) =>
+        current && current !== nextModuleId ? null : current,
+      );
+    };
+
+    updateActiveToolbar();
+    container.addEventListener("scroll", updateActiveToolbar, { passive: true });
+    window.addEventListener("resize", updateActiveToolbar);
+
+    return () => {
+      container.removeEventListener("scroll", updateActiveToolbar);
+      window.removeEventListener("resize", updateActiveToolbar);
+    };
+  }, [isPreviewMode, renderedSections]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -253,7 +359,7 @@ export default function ModuleContent() {
   }, []);
 
   const reorderMutation = useMutation({
-    mutationFn: async (blocks: ContentBlock[]) => {
+    mutationFn: async ({ moduleId: targetModuleId, blocks }: { moduleId: string; blocks: ContentBlock[] }) => {
       await Promise.all(
         blocks.map((block) =>
           apiRequest("PUT", `/api/content-blocks/${block.id}`, {
@@ -261,115 +367,92 @@ export default function ModuleContent() {
           }),
         ),
       );
+      return targetModuleId;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/modules", moduleId, "content-blocks"] });
-    },
-  });
-
-  const updateCourseDetailsMutation = useMutation({
-    mutationFn: async (updates: Partial<Course>) => {
-      if (!course) {
-        throw new Error("Course not loaded");
-      }
-      const response = await apiRequest("PUT", `/api/courses/${course.id}`, updates);
-      return response.json() as Promise<Course>;
-    },
-    onSuccess: (updatedCourse) => {
-      queryClient.setQueryData(["/api/courses", updatedCourse.id], updatedCourse);
-      queryClient.setQueryData<Course[]>(["/api/courses"], (existing) =>
-        existing?.map((candidate) => (candidate.id === updatedCourse.id ? updatedCourse : candidate)) ?? existing,
-      );
-      toast({
-        title: "Updated",
-        description: "Course details saved.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update course details.",
-        variant: "destructive",
-      });
+    onSuccess: (targetModuleId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/modules", targetModuleId, "content-blocks"] });
     },
   });
-
-  const saveCourseTitle = async () => {
-    if (!course) {
-      return;
-    }
-    const nextTitle = courseTitleDraft.trim();
-    if (!nextTitle || nextTitle === course.title) {
-      setCourseTitleDraft(course.title ?? "");
-      return;
-    }
-    await updateCourseDetailsMutation.mutateAsync({ title: nextTitle });
-  };
-
-  const saveCourseObjective = async () => {
-    if (!course) {
-      return;
-    }
-    const nextObjective = courseObjectiveDraft.trim();
-    if (nextObjective === (course.learningObjectives ?? "").trim()) {
-      setCourseObjectiveDraft(course.learningObjectives ?? "");
-      return;
-    }
-    await updateCourseDetailsMutation.mutateAsync({ learningObjectives: nextObjective });
-  };
 
   useEffect(() => {
-    if (!orderedBlocks.length || !contentBlocks || isUpdatingFromServerRef.current) {
-      return;
+    for (let index = 0; index < pageSections.length; index += 1) {
+      const section = pageSections[index];
+      const orderedBlocks = orderedBlocksByModule[section.module.id] || [];
+      const contentBlocks = sectionContentQueries[index]?.data || [];
+
+      if (!orderedBlocks.length || !contentBlocks.length || isUpdatingFromServerRef.current.has(section.module.id)) {
+        continue;
+      }
+
+      const orderChanged = orderedBlocks.some((block, blockIndex) => {
+        const serverBlock = contentBlocks.find((candidate) => candidate.id === block.id);
+        return serverBlock && serverBlock.order !== blockIndex.toString();
+      });
+
+      if (orderChanged) {
+        const timeoutId = window.setTimeout(() => {
+          reorderMutation.mutate({ moduleId: section.module.id, blocks: orderedBlocks });
+        }, 1000);
+
+        return () => window.clearTimeout(timeoutId);
+      }
     }
+  }, [orderedBlocksByModule, pageSections, reorderMutation, sectionContentStateKey]);
 
-    const orderChanged = orderedBlocks.some((block, index) => {
-      const serverBlock = contentBlocks.find((candidate) => candidate.id === block.id);
-      return serverBlock && serverBlock.order !== index.toString();
-    });
-
-    if (orderChanged) {
-      const timeoutId = setTimeout(() => {
-        reorderMutation.mutate(orderedBlocks);
-      }, 1000);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [contentBlocks, orderedBlocks, reorderMutation]);
-
-  const moveBlock = useCallback((dragId: string, hoverId: string) => {
-    setOrderedBlocks((prevBlocks) => {
-      const dragIndex = prevBlocks.findIndex((block) => block.id === dragId);
-      const hoverIndex = prevBlocks.findIndex((block) => block.id === hoverId);
+  const moveBlock = useCallback((targetModuleId: string, dragId: string, hoverId: string) => {
+    setOrderedBlocksByModule((prevBlocks) => {
+      const currentBlocks = prevBlocks[targetModuleId] || [];
+      const dragIndex = currentBlocks.findIndex((block) => block.id === dragId);
+      const hoverIndex = currentBlocks.findIndex((block) => block.id === hoverId);
 
       if (dragIndex === -1 || hoverIndex === -1 || dragIndex === hoverIndex) {
         return prevBlocks;
       }
 
-      const newBlocks = [...prevBlocks];
+      const newBlocks = [...currentBlocks];
       const [draggedBlock] = newBlocks.splice(dragIndex, 1);
       newBlocks.splice(hoverIndex, 0, draggedBlock);
 
-      return newBlocks.map((block, index) => ({
-        ...block,
-        order: index.toString(),
-      }));
+      return {
+        ...prevBlocks,
+        [targetModuleId]: newBlocks.map((block, index) => ({
+          ...block,
+          order: index.toString(),
+        })),
+      };
     });
   }, []);
 
   const updateBlockContent = useCallback((blockId: string, content: Record<string, any>) => {
-    setOrderedBlocks((prevBlocks) =>
-      prevBlocks.map((block) => (block.id === blockId ? { ...block, content } : block)),
-    );
+    setOrderedBlocksByModule((prevBlocks) => {
+      const nextBlocks = { ...prevBlocks };
+      for (const [targetModuleId, blocks] of Object.entries(prevBlocks)) {
+        if (blocks.some((block) => block.id === blockId)) {
+          nextBlocks[targetModuleId] = blocks.map((block) => (block.id === blockId ? { ...block, content } : block));
+          break;
+        }
+      }
+      return nextBlocks;
+    });
   }, []);
 
   const createContentBlockMutation = useMutation({
-    mutationFn: async (blockData: { type: string; content: unknown; order: string; metadata?: Record<string, unknown> }) => {
-      const response = await apiRequest("POST", `/api/modules/${moduleId}/content-blocks`, blockData);
-      return response.json();
+    mutationFn: async ({
+      moduleId: targetModuleId,
+      ...blockData
+    }: {
+      moduleId: string;
+      type: string;
+      content: unknown;
+      order: string;
+      metadata?: Record<string, unknown>;
+    }) => {
+      const response = await apiRequest("POST", `/api/modules/${targetModuleId}/content-blocks`, blockData);
+      const block = (await response.json()) as ContentBlock;
+      return { block, targetModuleId };
     },
     onSuccess: async (_data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/modules", moduleId, "content-blocks"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/modules", variables.moduleId, "content-blocks"] });
       if (variables.metadata?.isAiGenerated) {
         toast({
           title: String(variables.metadata.successTitle || "Content created"),
@@ -455,7 +538,7 @@ export default function ModuleContent() {
     },
     onSuccess: async (newLesson) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/courses", newLesson.courseId, "modules"] });
-      setLocation(`/module/${newLesson.id}/content`);
+      setLocation(`/module/${newLesson.parentModuleId ?? newLesson.id}/content#lesson-${newLesson.id}`);
       toast({
         title: "Lesson created",
         description: "A new lesson has been added to the module.",
@@ -470,16 +553,28 @@ export default function ModuleContent() {
     },
   });
 
+  const getOrderedBlocks = useCallback(
+    (targetModuleId: string) => orderedBlocksByModule[targetModuleId] || [],
+    [orderedBlocksByModule],
+  );
+
   const insertBlockAt = useCallback(
-    async (type: string, content: any, insertIndex: number, metadata?: Record<string, unknown>) => {
-      const response = await apiRequest("POST", `/api/modules/${moduleId}/content-blocks`, {
+    async (
+      targetModuleId: string,
+      type: string,
+      content: any,
+      insertIndex: number,
+      metadata?: Record<string, unknown>,
+    ) => {
+      const existingBlocks = getOrderedBlocks(targetModuleId);
+      const response = await apiRequest("POST", `/api/modules/${targetModuleId}/content-blocks`, {
         type,
         content,
-        order: (orderedBlocks.length || 0).toString(),
+        order: existingBlocks.length.toString(),
       });
       const createdBlock = (await response.json()) as ContentBlock;
 
-      const nextBlocks = [...orderedBlocks];
+      const nextBlocks = [...existingBlocks];
       nextBlocks.splice(insertIndex, 0, createdBlock);
 
       await Promise.all(
@@ -490,8 +585,8 @@ export default function ModuleContent() {
         ),
       );
 
-      await queryClient.invalidateQueries({ queryKey: ["/api/modules", moduleId, "content-blocks"] });
-      setActiveInsertIndex(null);
+      await queryClient.invalidateQueries({ queryKey: ["/api/modules", targetModuleId, "content-blocks"] });
+      setActiveInsertKey(null);
 
       if (metadata?.isAiGenerated) {
         toast({
@@ -500,24 +595,38 @@ export default function ModuleContent() {
         });
       }
     },
-    [moduleId, orderedBlocks, toast],
+    [getOrderedBlocks, toast],
   );
 
-  const handleAddContentBlock = async (type: string, content: any, insertIndex = orderedBlocks.length) => {
+  const handleAddContentBlock = async (
+    targetModuleId: string,
+    type: string,
+    content: any,
+    insertIndex = getOrderedBlocks(targetModuleId).length,
+  ) => {
+    const targetSection = sectionByModuleId[targetModuleId];
+    const targetBlocks = getOrderedBlocks(targetModuleId);
     const order = insertIndex.toString();
+    const targetModule = targetSection?.module;
+    const isLessonSection = targetSection?.kind === "lesson";
+    const chapterTitle = targetModule?.title || "Lesson";
+    const moduleTitle = isLessonSection ? displayModule?.title : targetModule?.title;
+    const sectionSummary = String(targetModule?.description || "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
     if (type === "ai-video") {
       setAiVideoInsertIndex(insertIndex);
+      setAiVideoTargetModuleId(targetModuleId);
+      setAiVideoTargetChapterTitle(chapterTitle);
       setIsAiVideoDialogOpen(true);
-      setActiveInsertIndex(null);
+      setActiveInsertKey(null);
       return;
     }
 
     if (type === "ai-image") {
       try {
-        const chapterTitle = displayChapter?.title || currentModule?.title || "Lesson image";
-        const moduleTitle = displayModule?.title;
-
         toast({
           title: "Generating image...",
           description: `Creating an AI image for ${chapterTitle}.`,
@@ -547,8 +656,9 @@ export default function ModuleContent() {
           isGenerated: true,
         };
 
-        if (insertIndex === orderedBlocks.length) {
+        if (insertIndex === targetBlocks.length) {
           createContentBlockMutation.mutate({
+            moduleId: targetModuleId,
             type,
             content: imageContent,
             order,
@@ -559,7 +669,7 @@ export default function ModuleContent() {
             },
           });
         } else {
-          await insertBlockAt(type, imageContent, insertIndex, {
+          await insertBlockAt(targetModuleId, type, imageContent, insertIndex, {
             isAiGenerated: true,
             successTitle: "Image generated successfully",
             successDescription: "Created with Hugging Face FLUX.1-schnell.",
@@ -584,7 +694,7 @@ export default function ModuleContent() {
         });
 
         const response = await apiRequest("POST", "/api/ai/generate-quiz", {
-          moduleId,
+          moduleId: targetModuleId,
           prompt: "Generate quiz questions for this lesson content. Focus on testing understanding of key concepts and learning objectives.",
           questionCount: 3,
           difficulty: "medium",
@@ -619,8 +729,9 @@ export default function ModuleContent() {
           isGenerated: true,
         };
 
-        if (insertIndex === orderedBlocks.length) {
+        if (insertIndex === targetBlocks.length) {
           createContentBlockMutation.mutate({
+            moduleId: targetModuleId,
             type,
             content: quizContent,
             order,
@@ -631,7 +742,7 @@ export default function ModuleContent() {
             },
           });
         } else {
-          await insertBlockAt(type, quizContent, insertIndex, {
+          await insertBlockAt(targetModuleId, type, quizContent, insertIndex, {
             isAiGenerated: true,
             successTitle: "Quiz generated successfully",
             successDescription: `Generated ${transformedQuestions.length} questions using ${data.model}`,
@@ -656,7 +767,7 @@ export default function ModuleContent() {
         });
 
         const response = await apiRequest("POST", "/api/ai/generate-assignment", {
-          moduleId,
+          moduleId: targetModuleId,
           prompt: "Create an assignment that helps students apply and demonstrate their understanding of the key concepts from this lesson module.",
           assignmentType: "project",
           difficulty: "medium",
@@ -672,8 +783,9 @@ export default function ModuleContent() {
           isGenerated: true,
         };
 
-        if (insertIndex === orderedBlocks.length) {
+        if (insertIndex === targetBlocks.length) {
           createContentBlockMutation.mutate({
+            moduleId: targetModuleId,
             type,
             content: assignmentContent,
             order,
@@ -684,7 +796,7 @@ export default function ModuleContent() {
             },
           });
         } else {
-          await insertBlockAt(type, assignmentContent, insertIndex, {
+          await insertBlockAt(targetModuleId, type, assignmentContent, insertIndex, {
             isAiGenerated: true,
             successTitle: "Assignment generated successfully",
             successDescription: `Created assignment using ${data.model}`,
@@ -703,22 +815,16 @@ export default function ModuleContent() {
 
     if (type === "ai-audio") {
       try {
-        const chapterTitle = displayChapter?.title || currentModule?.title || "Lesson audio";
-        const chapterSummary = String(displayChapter?.description || currentModule?.description || "")
-          .replace(/<[^>]*>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-
         toast({
           title: "Generating audio...",
           description: `Creating a short narration for ${chapterTitle}.`,
         });
 
         const response = await apiRequest("POST", "/api/ai/generate-audio", {
-          moduleId,
+          moduleId: targetModuleId,
           provider: "gemini",
           type: "explanation",
-          prompt: `Write a spoken lesson narration for the chapter titled "${chapterTitle}". ${chapterSummary ? `Chapter summary: ${chapterSummary}. ` : ""}Keep it under 35 words so the audio stays within 15 seconds. Use a concise educational tone and focus on the key takeaway.`,
+          prompt: `Write a spoken lesson narration for the chapter titled "${chapterTitle}". ${sectionSummary ? `Chapter summary: ${sectionSummary}. ` : ""}Keep it under 35 words so the audio stays within 15 seconds. Use a concise educational tone and focus on the key takeaway.`,
           style: {
             tone: "friendly",
             readingLevel: "intermediate",
@@ -740,8 +846,9 @@ export default function ModuleContent() {
           isGenerated: true,
         };
 
-        if (insertIndex === orderedBlocks.length) {
+        if (insertIndex === targetBlocks.length) {
           createContentBlockMutation.mutate({
+            moduleId: targetModuleId,
             type,
             content: audioContent,
             order,
@@ -752,7 +859,7 @@ export default function ModuleContent() {
             },
           });
         } else {
-          await insertBlockAt(type, audioContent, insertIndex, {
+          await insertBlockAt(targetModuleId, type, audioContent, insertIndex, {
             isAiGenerated: true,
             successTitle: "Audio generated successfully",
             successDescription: `Added a short ElevenLabs narration for ${chapterTitle}.`,
@@ -769,13 +876,13 @@ export default function ModuleContent() {
       }
     }
 
-    if (insertIndex === orderedBlocks.length) {
-      createContentBlockMutation.mutate({ type, content, order });
-      setActiveInsertIndex(null);
+    if (insertIndex === targetBlocks.length) {
+      createContentBlockMutation.mutate({ moduleId: targetModuleId, type, content, order });
+      setActiveInsertKey(null);
       return;
     }
 
-    await insertBlockAt(type, content, insertIndex);
+    await insertBlockAt(targetModuleId, type, content, insertIndex);
   };
 
   const handleAiVideoGenerated = useCallback(
@@ -790,7 +897,12 @@ export default function ModuleContent() {
       chapterTitle: string;
       duration: number;
     }) => {
-      const nextInsertIndex = aiVideoInsertIndex ?? orderedBlocks.length;
+      if (!aiVideoTargetModuleId) {
+        return;
+      }
+
+      const targetBlocks = getOrderedBlocks(aiVideoTargetModuleId);
+      const nextInsertIndex = aiVideoInsertIndex ?? targetBlocks.length;
       const videoContent = {
         title: chapterTitle,
         url: videoUrl,
@@ -800,8 +912,9 @@ export default function ModuleContent() {
         isAIGenerated: true,
       };
 
-      if (nextInsertIndex === orderedBlocks.length) {
+      if (nextInsertIndex === targetBlocks.length) {
         createContentBlockMutation.mutate({
+          moduleId: aiVideoTargetModuleId,
           type: "video",
           content: videoContent,
           order: nextInsertIndex.toString(),
@@ -812,7 +925,7 @@ export default function ModuleContent() {
           },
         });
       } else {
-        await insertBlockAt("video", videoContent, nextInsertIndex, {
+        await insertBlockAt(aiVideoTargetModuleId, "video", videoContent, nextInsertIndex, {
           isAiGenerated: true,
           successTitle: "Video generated successfully",
           successDescription: `Added a ${duration}s Tavus video for ${chapterTitle}.`,
@@ -820,8 +933,10 @@ export default function ModuleContent() {
       }
 
       setAiVideoInsertIndex(null);
+      setAiVideoTargetModuleId(null);
+      setAiVideoTargetChapterTitle(null);
     },
-    [aiVideoInsertIndex, createContentBlockMutation, insertBlockAt, orderedBlocks.length],
+    [aiVideoInsertIndex, aiVideoTargetModuleId, createContentBlockMutation, getOrderedBlocks, insertBlockAt],
   );
 
   const handlePackageCourse = async () => {
@@ -998,23 +1113,24 @@ export default function ModuleContent() {
   };
 
   const handleAddPreviewToCanvas = () => {
-    if (!aiPreview) {
+    if (!aiPreview || !displayModule) {
       return;
     }
 
+    const targetBlocks = getOrderedBlocks(displayModule.id);
     const order =
-      contentBlocks && contentBlocks.length > 0
-        ? (Math.max(...contentBlocks.map((block) => parseInt(block.order))) + 1).toString()
+      targetBlocks.length > 0
+        ? (Math.max(...targetBlocks.map((block) => parseInt(block.order))) + 1).toString()
         : "0";
 
     if (aiPreview.type === "text") {
-      createContentBlockMutation.mutate({ type: "ai-text", content: aiPreview.content, order });
+      createContentBlockMutation.mutate({ moduleId: displayModule.id, type: "ai-text", content: aiPreview.content, order });
     }
     if (aiPreview.type === "image") {
-      createContentBlockMutation.mutate({ type: "ai-image", content: aiPreview.content, order });
+      createContentBlockMutation.mutate({ moduleId: displayModule.id, type: "ai-image", content: aiPreview.content, order });
     }
     if (aiPreview.type === "audio") {
-      createContentBlockMutation.mutate({ type: "ai-audio", content: aiPreview.content, order });
+      createContentBlockMutation.mutate({ moduleId: displayModule.id, type: "ai-audio", content: aiPreview.content, order });
     }
 
     setAiPreview(null);
@@ -1191,11 +1307,13 @@ export default function ModuleContent() {
           setIsAiVideoDialogOpen(open);
           if (!open) {
             setAiVideoInsertIndex(null);
+            setAiVideoTargetModuleId(null);
+            setAiVideoTargetChapterTitle(null);
           }
         }}
-        moduleId={moduleId}
+        moduleId={aiVideoTargetModuleId || displayModule?.id || moduleId}
         chapterOptions={chapterOptions}
-        defaultChapterTitle={displayChapter?.title || currentModule?.title}
+        defaultChapterTitle={aiVideoTargetChapterTitle || displayChapter?.title || currentModule?.title}
         onVideoGenerated={(video) => {
           void handleAiVideoGenerated(video);
         }}
@@ -1217,7 +1335,7 @@ export default function ModuleContent() {
               </Button>
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-slate-900">{course?.title || "Course"}</div>
-                <div className="truncate text-xs text-slate-500">{module.title}</div>
+                <div className="truncate text-xs text-slate-500">{displayModule?.title || module.title}</div>
               </div>
             </div>
 
@@ -1264,8 +1382,7 @@ export default function ModuleContent() {
             <aside className="hidden w-[320px] shrink-0 border-r border-slate-200 bg-white lg:block">
               <CourseNavigation
                 courseId={module.courseId}
-                currentModuleId={moduleId}
-                currentBlockId={contentBlockId}
+                currentModuleId={displayModule?.id || moduleId}
                 courseTitle={course?.title}
                 onAddModule={() => createModuleMutation.mutate()}
                 onAddLesson={(parentModuleId: string) => createLessonMutation.mutate(parentModuleId)}
@@ -1274,7 +1391,7 @@ export default function ModuleContent() {
             </aside>
           )}
 
-          <main className="flex-1 overflow-auto">
+          <main ref={mainScrollRef} className="flex-1 overflow-auto">
             {!isNavVisible ? (
               <div className="fixed left-4 top-24 z-30 hidden lg:block">
                 <Button
@@ -1293,162 +1410,147 @@ export default function ModuleContent() {
               <div className={`${surfaceClass} ${isPreviewMode ? "rise-preview-surface" : "rise-editor-surface"}`}>
                 <section className="border-b border-slate-200 px-8 py-8">
                   <div className="space-y-6">
-                  <div className="space-y-3">
-                    <h1
-                      ref={courseTitleRef}
-                      contentEditable={!isPreviewMode}
-                      suppressContentEditableWarning={!isPreviewMode}
-                      onInput={
-                        isPreviewMode
-                          ? undefined
-                          : (event: FormEvent<HTMLHeadingElement>) => setCourseTitleDraft(event.currentTarget.textContent || "")
-                      }
-                      onBlur={isPreviewMode ? undefined : () => void saveCourseTitle()}
-                      onKeyDown={(event) => {
-                        if (isPreviewMode) {
-                          return;
-                        }
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          event.currentTarget.blur();
-                        }
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          setCourseTitleDraft(course?.title ?? "");
-                          event.currentTarget.textContent = course?.title ?? "";
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      className={`rise-lesson-title max-w-3xl ${isPreviewMode ? "" : "outline-none"}`}
-                    >
-                      {courseTitleDraft || "Course"}
-                    </h1>
-                    <p
-                      ref={courseObjectiveRef}
-                      contentEditable={!isPreviewMode}
-                      suppressContentEditableWarning={!isPreviewMode}
-                      onInput={
-                        isPreviewMode
-                          ? undefined
-                          : (event: FormEvent<HTMLParagraphElement>) => setCourseObjectiveDraft(event.currentTarget.textContent || "")
-                      }
-                      onBlur={isPreviewMode ? undefined : () => void saveCourseObjective()}
-                      className={`rise-lesson-description max-w-4xl whitespace-pre-wrap text-slate-700 ${isPreviewMode ? "" : "outline-none"}`}
-                    >
-                      {courseObjectiveDraft}
-                    </p>
-                  </div>
-
                   {displayModule ? (
-                    <div className="border-t border-slate-200 pt-6">
-                    <h2 className="text-2xl font-semibold text-slate-900">{displayModule.title}</h2>
-                    {moduleObjectivesParagraph ? (
-                      <div className="mt-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Learning Objective</div>
-                        <p className="rise-lesson-description mt-2 max-w-4xl text-slate-600">
-                          {moduleObjectivesParagraph}
-                        </p>
-                      </div>
-                    ) : null}
+                    <div>
+                      <h1 className="text-3xl font-semibold text-slate-900">{displayModule.title}</h1>
+                      {moduleObjectivesParagraph ? (
+                        <div className="mt-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Learning Objective</div>
+                          <p className="rise-lesson-description mt-2 max-w-4xl text-slate-600">
+                            {moduleObjectivesParagraph}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
                   {displayChapter ? (
                     <div className="border-t border-slate-200 pt-6">
-                    <h3 className="text-lg font-semibold text-slate-900">{displayChapter.title}</h3>
-                    {chapterSummary ? (
-                      <p className="rise-lesson-description mt-2 max-w-3xl text-slate-500">
-                        {chapterSummary}
-                      </p>
-                    ) : null}
+                      <h3 className="text-lg font-semibold text-slate-900">{displayChapter.title}</h3>
+                      {chapterSummary ? (
+                        <p className="rise-lesson-description mt-2 max-w-3xl text-slate-500">
+                          {chapterSummary}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                   </div>
                 </section>
 
-                {isPreviewMode ? (
-                  <div data-testid="preview-content-container">
-                    <div className="px-8 py-2">
-                  {orderedBlocks.length > 0 ? (
-                    orderedBlocks.map((block) => (
-                      <div key={block.id}>
-                        <ContentBlockComponent contentBlock={block} previewMode />
-                      </div>
-                    ))
-                  ) : null}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="px-8 py-2">
-                    {orderedBlocks.length > 0 ? (
-                      orderedBlocks.map((block, index) => (
-                        <div key={block.id} className="group/insert">
-                          <ContentBlockComponent
-                            contentBlock={block}
-                            onMoveBlock={moveBlock}
-                            onContentChange={updateBlockContent}
-                          />
-                            <div
-                              ref={activeInsertIndex === index + 1 ? activeInsertMenuRef : null}
-                              className="relative flex items-center justify-center py-1"
-                            >
-                              <div
-                                className={`absolute left-0 right-0 h-px bg-slate-200 transition-opacity duration-150 ${
-                                  activeInsertIndex === index + 1 ? "opacity-100" : "opacity-0 group-hover/insert:opacity-100"
-                                }`}
-                              />
-                              {activeInsertIndex === index + 1 ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    aria-hidden="true"
-                                    className="fixed inset-0 z-10 cursor-default"
-                                    onClick={() => setActiveInsertIndex(null)}
-                                  />
-                                  <div className="relative z-20">
-                                    <ContentBlockMenu
-                                      onAddContent={(type, content) => {
-                                        void handleAddContentBlock(type, content, index + 1);
-                                      }}
-                                      onClose={() => setActiveInsertIndex(null)}
-                                      mode="mini"
-                                    />
-                                  </div>
-                                </>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setActiveInsertIndex(index + 1)}
-                                className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-white opacity-0 shadow-sm transition-all duration-150 group-hover/insert:opacity-100 hover:bg-slate-900 focus:opacity-100"
-                                aria-label="Insert block"
-                              >
-                                <Plus className="h-2.5 w-2.5 stroke-[2.75]" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="py-12 text-center">
-                        <div className="text-lg font-medium text-slate-900">Start building this lesson</div>
-                        <p className="mt-2 text-sm text-slate-500">
-                          Use the quick toolbar below to add text, media, interactions, and AI-generated blocks.
-                        </p>
-                      </div>
-                    )}
+                <div className={isPreviewMode ? "" : "pb-6"}>
+                  <div className="px-8 py-2" data-testid="preview-content-container">
+                    {renderedSections.map((section, sectionIndex) => {
+                      const sectionBlocks = getOrderedBlocks(section.module.id).filter(blockHasVisibleContent);
+                      const sectionInsertPrefix = `insert:${section.module.id}:`;
 
-                    <div className="sticky bottom-6 z-20 flex justify-center pt-2">
-                      <ContentBlockMenu
-                        onAddContent={(type, content) => {
-                          void handleAddContentBlock(type, content);
-                        }}
-                        onClose={() => undefined}
-                      />
-                    </div>
-                    </div>
+                      return (
+                        <section
+                          key={section.module.id}
+                          data-section-id={section.module.id}
+                          id={section.kind === "lesson" ? `lesson-${section.module.id}` : undefined}
+                          className={sectionIndex === 0 ? "" : "border-t border-slate-200 pt-8 mt-8"}
+                        >
+                          {section.kind === "lesson" ? (
+                            <div className="mb-6">
+                              <h2 className="text-2xl font-semibold text-slate-900">{section.module.title}</h2>
+                              {section.module.description ? (
+                                <p className="rise-lesson-description mt-2 max-w-3xl text-slate-500">
+                                  {String(section.module.description).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {sectionBlocks.length > 0 ? (
+                            sectionBlocks.map((block, index) => {
+                              const isLastBlock = index === sectionBlocks.length - 1;
+                              const insertKey = `${sectionInsertPrefix}${index + 1}`;
+                              return (
+                                <div key={block.id} className="group/insert">
+                                  <ContentBlockComponent
+                                    contentBlock={block}
+                                    previewMode={isPreviewMode}
+                                    onMoveBlock={isPreviewMode ? undefined : (dragId, hoverId) => moveBlock(section.module.id, dragId, hoverId)}
+                                    onContentChange={isPreviewMode ? undefined : updateBlockContent}
+                                  />
+                                  {!isPreviewMode && !isLastBlock ? (
+                                    <div
+                                      ref={activeInsertKey === insertKey ? activeInsertMenuRef : null}
+                                      className="relative flex items-center justify-center py-1"
+                                    >
+                                      <div
+                                        className={`absolute left-0 right-0 h-px bg-slate-200 transition-opacity duration-150 ${
+                                          activeInsertKey === insertKey ? "opacity-100" : "opacity-0 group-hover/insert:opacity-100"
+                                        }`}
+                                      />
+                                      {activeInsertKey === insertKey ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            aria-hidden="true"
+                                            className="fixed inset-0 z-10 cursor-default"
+                                            onClick={() => setActiveInsertKey(null)}
+                                          />
+                                          <div className="relative z-20">
+                                            <ContentBlockMenu
+                                              onAddContent={(type, content) => {
+                                                void handleAddContentBlock(section.module.id, type, content, index + 1);
+                                              }}
+                                              onClose={() => setActiveInsertKey(null)}
+                                              mode="mini"
+                                            />
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveInsertKey(insertKey)}
+                                          className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-white opacity-0 shadow-sm transition-all duration-150 group-hover/insert:opacity-100 hover:bg-slate-900 focus:opacity-100"
+                                          aria-label="Insert block"
+                                        >
+                                          <Plus className="h-2.5 w-2.5 stroke-[2.75]" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })
+                          ) : isPreviewMode ? null : (
+                            <div className="py-12 text-center">
+                              <div className="text-lg font-medium text-slate-900">
+                                {section.kind === "module" ? "Start building this module" : "Start building this lesson"}
+                              </div>
+                              <p className="mt-2 text-sm text-slate-500">
+                                Use the quick toolbar below to add text, media, interactions, and AI-generated blocks.
+                              </p>
+                            </div>
+                          )}
+
+                          {!isPreviewMode && activeToolbarModuleId === section.module.id ? (
+                            <div
+                              className="w-full pt-6"
+                              onMouseEnter={() => setHoveredToolbarModuleId(section.module.id)}
+                              onMouseLeave={() => setHoveredToolbarModuleId((current) => (current === section.module.id ? null : current))}
+                            >
+                              <div className="flex min-h-10 w-full items-center justify-center">
+                                {hoveredToolbarModuleId === section.module.id ? (
+                                  <ContentBlockMenu
+                                    onAddContent={(type, content) => {
+                                      void handleAddContentBlock(section.module.id, type, content);
+                                    }}
+                                    onClose={() => undefined}
+                                  />
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+
+                        </section>
+                      );
+                    })}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </main>

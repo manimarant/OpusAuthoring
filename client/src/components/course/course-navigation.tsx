@@ -114,6 +114,24 @@ function SortableLessonItem(props: SortableLessonItemProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   
   const isChapterActive = currentModuleId === lesson.id;
+  const handleLessonClick = () => {
+    const parentModuleId = lesson.parentModuleId ?? lesson.id;
+    const lessonHash = `#lesson-${lesson.id}`;
+    const targetPath = `/module/${parentModuleId}/content`;
+
+    if (window.location.pathname === targetPath) {
+      const target = document.querySelector(lessonHash);
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (window.location.hash !== lessonHash) {
+        window.history.replaceState(null, "", `${targetPath}${lessonHash}`);
+      }
+      return;
+    }
+
+    setLocation(`${targetPath}${lessonHash}`);
+  };
 
   return (
     <div
@@ -124,7 +142,7 @@ function SortableLessonItem(props: SortableLessonItemProps) {
           ? "bg-sky-50 text-sky-700 font-medium" 
           : "hover:bg-slate-50 text-slate-500 hover:text-slate-900"
       }`}
-      onClick={() => setLocation(`/module/${lesson.id}/content`)}
+      onClick={handleLessonClick}
     >
       <div
         {...attributes}
@@ -188,13 +206,6 @@ function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, cu
   });
   
   const handleModuleClick = () => {
-    // If there are child modules (chapters), navigate to the first one
-    if (childModules && childModules.length > 0) {
-      const first = childModules[0];
-      setLocation(`/module/${first.id}/content`);
-      return;
-    }
-    // Otherwise navigate to content blocks
     if (isExpanded && blocks && blocks.length > 0) {
       const first = [...blocks].sort((a, b) => parseInt(a.order) - parseInt(b.order))[0];
       if (first) {
@@ -297,7 +308,7 @@ function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, cu
           .filter((candidate: any) => candidate.parentModuleId === topLevelModule.id)
           .sort((a, b) => parseInt(a.order) - parseInt(b.order));
         if (chapters.length > 0) {
-          return `/module/${chapters[0].id}/content`;
+          return `/module/${topLevelModule.id}/content`;
         }
         return `/module/${topLevelModule.id}/content`;
       }
@@ -314,7 +325,7 @@ function ModuleItem({ module, modules, isExpanded, onToggle, currentModuleId, cu
           .filter((candidate: any) => candidate.parentModuleId === target.parentModuleId)
           .sort((a, b) => parseInt(a.order) - parseInt(b.order));
         if (siblingChapters.length > 0) {
-          return `/module/${siblingChapters[0].id}/content`;
+          return `/module/${target.parentModuleId}/content`;
         }
       }
 

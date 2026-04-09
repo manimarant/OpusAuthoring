@@ -3061,38 +3061,6 @@ export default function ContentBlockComponent({
           </div>
         );
       
-      case "list":
-        return (
-          <div className="rise-content space-y-3" data-testid={`content-list-${contentBlock.id}`}>
-            {content.title && (
-              <h4 className="font-medium">{content.title}</h4>
-            )}
-            {Array.isArray(content.items) && content.items.length > 0 ? (
-              content.type === 'ordered' ? (
-                <ol className="list-decimal list-inside space-y-2">
-                  {content.items.map((item: any, index: number) => (
-                    <li key={index}>
-                      {item.text || `List item ${index + 1}`}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <ul className="list-disc list-inside space-y-2">
-                  {content.items.map((item: any, index: number) => (
-                    <li key={index}>
-                      {item.text || `List item ${index + 1}`}
-                    </li>
-                  ))}
-                </ul>
-              )
-            ) : (
-              <div className="text-center text-muted-foreground py-4">
-                No list items configured yet
-              </div>
-            )}
-          </div>
-        );
-
       case "process-flow":
         return renderProcessFlowBlock(content);
 
