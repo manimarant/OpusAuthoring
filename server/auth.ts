@@ -9,6 +9,7 @@ const GUEST_USERNAME = "Guest";
 const PASSWORD_PREFIX = "scrypt";
 const SCRYPT_KEYLEN = 64;
 const AUTH_COOKIE_NAME = "opuslearn.auth";
+let defaultUsersPromise: Promise<void> | undefined;
 
 export type AuthUser = {
   id: string;
@@ -75,19 +76,34 @@ export function toAuthUser(user: { id: string; username: string; password: strin
 }
 
 export async function ensureDefaultUsers() {
-  const defaultUsers = ["Mani", "Renoj", GUEST_USERNAME];
+  if (!defaultUsersPromise) {
+    defaultUsersPromise = (async () => {
+      const defaultUsers = ["Mani", "Renoj", GUEST_USERNAME];
 
-  for (const username of defaultUsers) {
-    const existingUser = await storage.getUserByUsername(username);
-    if (existingUser) {
-      continue;
-    }
+      for (const username of defaultUsers) {
+        const existingUser = await storage.getUserByUsername(username);
+        if (existingUser) {
+          continue;
+        }
 
-    await storage.createUser({
-      username,
-      password: hashPassword(DEFAULT_PASSWORD),
+        await storage.createUser({
+          username,
+          password: hashPassword(DEFAULT_PASSWORD),
+        });
+      }
+    })().catch((error) => {
+      defaultUsersPromise = undefined;
+      throw error;
     });
   }
+
+  await defaultUsersPromise;
+}
+
+export function ensureDefaultUsersInBackground() {
+  void ensureDefaultUsers().catch((error) => {
+    console.error("Failed to ensure default users:", error);
+  });
 }
 
 function getAuthCookieSecret() {

@@ -34,6 +34,7 @@ import {
   clearAuthCookie,
   defaultPassword,
   ensureDefaultUsers,
+  ensureDefaultUsersInBackground,
   getAuthenticatedUser,
   hashPassword,
   requireAuth,
@@ -320,7 +321,11 @@ function getAppUrl(req: express.Request): string {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  await ensureDefaultUsers();
+  if (process.env.VERCEL) {
+    ensureDefaultUsersInBackground();
+  } else {
+    await ensureDefaultUsers();
+  }
   const isSecureCookie = app.get("env") === "production";
 
   // Serve uploaded files statically
